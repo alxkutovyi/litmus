@@ -1,0 +1,54 @@
+/* shared/tokens.css
+   Single source of truth for LinkedIn AI Detector design tokens.
+   Imported by popup/popup.html, stats/stats.html, settings/settings.html.
+   Content scripts (ui.js, toast.js) inline the same values directly since
+   they inject into LinkedIn's DOM and cannot load extension resources via <link>. */
+
+:root {
+  /* ── Backgrounds ── */
+  --lai-bg:         #FFFFFF;
+  --lai-bg-grouped: #FAFAFA;   /* footer, inset fields, grouped rows */
+  --lai-bg-inset:   #F5F5F7;   /* hover states, progress track */
+
+  /* ── Text ── */
+  --lai-text:   #1D1D1F;       /* primary */
+  --lai-text-2: #6E6E73;       /* secondary — labels, captions */
+  --lai-text-3: #A1A1A6;       /* tertiary — disabled, hints */
+
+  /* ── Borders ── */
+  --lai-border:       #E5E5EA; /* section dividers, card edges (0.5px) */
+  --lai-border-input: #D2D2D7; /* form input borders (1px) */
+  --lai-border-focus: #86868B; /* input :focus — no blue glow */
+
+  /* ── Accent: actionable text only, never fills, never decorative ── */
+  --lai-accent:      #0071E3;
+  --lai-destructive: #C44545;
+
+  /* ── Classification status ── */
+  /* Used exclusively for badge rings and inline status dots — nowhere else */
+  --lai-ai:      #C44545;
+  --lai-mixed:   #B8893E;
+  --lai-human:   #5A8A5A;
+  --lai-unknown: #A1A1A6;
+
+  /* ── Typography ── */
+  --lai-font:      -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --lai-font-mono: 'SF Mono', Menlo, monospace;
+
+  /* ── Spacing (8px base unit) ── */
+  --lai-sp-1: 4px;
+  --lai-sp-2: 8px;
+  --lai-sp-3: 12px;
+  --lai-sp-4: 16px;
+  --lai-sp-5: 20px;
+
+  /* ── Border radii ── */
+  --lai-r-1: 4px;   /* buttons, inputs, tags */
+  --lai-r-2: 6px;   /* cards, table rows */
+  --lai-r-3: 8px;   /* toast */
+  --lai-r-4: 10px;  /* popup container */
+
+  /* ── Transitions ── */
+  --lai-t-hover:  150ms ease;
+  --lai-t-motion: 200ms ease;
+}

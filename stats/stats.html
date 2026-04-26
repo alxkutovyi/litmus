@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Litmus — Stats</title>
+  <link rel="stylesheet" href="../shared/tokens.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--litmus-font, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+      font-size: 13px;
+      color: var(--litmus-text, #1D1D1F);
+      background: #F5F5F7;
+      min-height: 100vh;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      background: #FFFFFF;
+      border-bottom: 0.5px solid #E5E5EA;
+      padding: 20px 32px 0;
+    }
+    .page-header-row1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .page-title-wrap { display: flex; align-items: center; gap: 10px; }
+    .page-title { font-size: 17px; font-weight: 500; color: #1D1D1F; }
+    .page-header-actions { display: flex; align-items: center; gap: 16px; }
+    .hdr-btn {
+      font-family: inherit; font-size: 12px; background: none; border: none;
+      outline: none; cursor: pointer; padding: 0; text-decoration: none;
+      -webkit-appearance: none;
+    }
+    .hdr-btn-destructive { color: #C44545; }
+    .hdr-btn-accent      { color: #0071E3; }
+    .hdr-btn:hover { text-decoration: underline; }
+    .page-subtitle { font-size: 12px; color: #6E6E73; }
+
+    /* ── Stats line ── */
+    .litmus-stats-line {
+      font-size: 12px;
+      color: #6E6E73;
+      padding: 8px 0 14px;
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+    }
+    .litmus-stat-num   { color: #1D1D1F; font-weight: 500; }
+    .litmus-stat-red   { color: #C44545; }
+    .litmus-stat-green { color: #5A8A5A; }
+    .litmus-stat-sep   { color: #A1A1A6; margin: 0 8px; }
+
+    /* ── Suffix-wrapped inputs (shared) ── */
+    .input-suffix-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    .input-suffix-wrap input {
+      padding-right: 22px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .input-suffix-wrap .suffix {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 13px;
+      color: #6E6E73;
+      pointer-events: none;
+    }
+
+    /* ── Threshold strip ── */
+    .threshold-strip {
+      background: #FFFFFF;
+      border-bottom: 0.5px solid #E5E5EA;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .threshold-left {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .threshold-icon { color: #A1A1A6; flex-shrink: 0; }
+    .threshold-tag {
+      font-size: 10px; font-weight: 500; color: #6E6E73;
+      text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0;
+    }
+    .threshold-sentence {
+      font-size: 13px; color: #1D1D1F;
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+    }
+    .threshold-strip input[type="text"] {
+      width: 52px; height: 26px; padding: 4px 8px;
+      font-size: 13px; border: 1px solid #D2D2D7; border-radius: 4px;
+      font-family: inherit; font-variant-numeric: tabular-nums;
+      text-align: center; outline: none; -webkit-appearance: none;
+    }
+    .threshold-strip input[type="text"]:focus { border-color: #86868B; }
+    .threshold-strip input[type="text"].invalid { border-color: #C44545; }
+    #threshold-min-ai { width: 62px; padding: 4px 20px 4px 8px; }
+
+    .threshold-preview { display: flex; align-items: center; gap: 12px; }
+    .threshold-preview-text { font-size: 12px; color: #6E6E73; }
+    .threshold-preview-text strong {
+      font-weight: 500; color: #1D1D1F; font-variant-numeric: tabular-nums;
+    }
+    .threshold-reset {
+      font-family: inherit; font-size: 12px; background: none; border: none;
+      color: #6E6E73; cursor: pointer; padding: 0; outline: none;
+    }
+    .threshold-reset:disabled { opacity: 0.4; cursor: not-allowed; }
+    .threshold-reset:not(:disabled):hover { text-decoration: underline; }
+    .threshold-apply {
+      font-family: inherit; font-size: 12px; font-weight: 500;
+      padding: 5px 14px; border: none; border-radius: 4px;
+      cursor: pointer; outline: none;
+      background: #1D1D1F; color: #FFFFFF;
+    }
+    .threshold-apply:disabled {
+      background: #E5E5EA; color: #A1A1A6; cursor: not-allowed;
+    }
+
+/* ── VIEW filter bar ── */
+    .view-filter-bar {
+      background: #FAFAFA;
+      border-bottom: 0.5px solid #E5E5EA;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .view-label {
+      font-size: 11px; color: #6E6E73;
+      text-transform: uppercase; letter-spacing: 0.4px;
+      flex-shrink: 0;
+    }
+    .view-seg {
+      display: inline-flex; background: #EBEBEB; border-radius: 5px;
+      padding: 2px; gap: 0; flex-shrink: 0;
+    }
+    .view-seg-btn {
+      font-family: inherit; font-size: 12px; padding: 4px 10px;
+      background: transparent; border: none; color: #6E6E73; cursor: pointer;
+      border-radius: 3px; -webkit-appearance: none; outline: none;
+      white-space: nowrap;
+    }
+    .view-seg-btn.active {
+      background: #FFFFFF; border: 0.5px solid #E5E5EA;
+      color: #1D1D1F; font-weight: 500;
+    }
+    .view-count { color: #A1A1A6; font-weight: 400; margin-left: 4px; }
+    .view-divider { width: 1px; height: 20px; background: #E5E5EA; flex-shrink: 0; }
+
+    /* ── Filter inputs ── */
+    .filter-input {
+      height: 30px; padding: 0 10px;
+      border: 1px solid #D2D2D7; border-radius: 4px;
+      font-family: inherit; font-size: 13px; color: #1D1D1F;
+      background: #FFFFFF; outline: none; max-width: 240px; width: 240px;
+    }
+    .filter-input:focus { border-color: #86868B; }
+    .filter-label-num { font-size: 13px; color: #6E6E73; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .filter-input-num {
+      width: 48px; height: 30px; padding: 0 8px;
+      border: 1px solid #D2D2D7; border-radius: 4px;
+      font-family: inherit; font-size: 13px; color: #1D1D1F;
+      background: #FFFFFF; outline: none; text-align: center;
+      font-variant-numeric: tabular-nums; -webkit-appearance: none;
+    }
+    .filter-input-num:focus { border-color: #86868B; }
+    .filter-count { font-size: 11px; color: #A1A1A6; white-space: nowrap; margin-left: auto; }
+
+    /* ── Page container ── */
+    .page-content { max-width: 1200px; margin: 0 auto; }
+
+    /* ── Table shared ── */
+    .table-wrap { background: #FFFFFF; overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; min-width: 700px; table-layout: fixed; }
+
+    thead th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px; font-weight: 400;
+      color: #6E6E73;
+      text-transform: uppercase; letter-spacing: 0.4px;
+      background: #FAFAFA;
+      border-bottom: 0.5px solid #E5E5EA;
+      cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    thead th.sort-active { color: #1D1D1F; font-weight: 500; }
+    thead th.sort-active::after  { content: ' ↓'; color: #1D1D1F; }
+    thead th.sort-asc::after     { content: ' ↑'; color: #1D1D1F; }
+    thead th:hover:not(.sort-active) { color: #1D1D1F; }
+
+    /* Right-align numeric columns */
+    thead th.right, tbody td.right { text-align: right; }
+
+    tbody tr { border-bottom: 0.5px solid #F5F5F7; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #FAFAFA; }
+    tbody td { padding: 8px 16px; font-size: 13px; vertical-align: middle; }
+    thead th:first-child, tbody td:first-child { padding-left: 0; padding-right: 0; }
+    thead th:nth-child(2), tbody td:nth-child(2) { padding-left: 16px; }
+
+    .td-author-cell { min-width: 0; }
+    .td-author-name {
+      font-size: 13px; color: #1D1D1F; line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    .td-author-name.unknown { font-style: italic; color: #A1A1A6; }
+    .td-author-url {
+      font-size: 11px; color: #0071E3; text-decoration: none; display: inline-block;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+      max-width: 100%;
+    }
+    .td-author-url:hover { text-decoration: underline; }
+
+    .td-num       { font-variant-numeric: tabular-nums; font-size: 12px; }
+    .td-secondary { font-variant-numeric: tabular-nums; font-size: 11px; color: #6E6E73; white-space: nowrap !important; }
+
+    /* ── AI% cell (bar + percentage side-by-side) ── */
+    .litmus-cell-ai {
+      display: flex; flex-direction: row; align-items: center; justify-content: flex-end;
+      gap: 10px; font-variant-numeric: tabular-nums;
+    }
+    .litmus-class-bar {
+      width: 160px; height: 5px; border-radius: 2px; overflow: hidden;
+      display: flex; background: #E5E5EA; opacity: 0.85; flex-shrink: 0; cursor: default;
+    }
+    .litmus-class-bar-ai        { background: #C44545; height: 100%; }
+    .litmus-class-bar-mixed     { background: #B8893E; height: 100%; }
+    .litmus-class-bar-uncertain { background: #C7C7CC; height: 100%; }
+    .litmus-class-bar-human     { background: #5A8A5A; height: 100%; }
+    .litmus-ai-pct { font-size: 12px; color: #1D1D1F; min-width: 32px; text-align: right; }
+
+    /* ── Bar breakdown tooltip ── */
+    .litmus-bar-tooltip {
+      position: fixed; z-index: 9999;
+      background: #1D1D1F; color: #FFFFFF;
+      font-size: 11px; line-height: 1.5; padding: 8px 10px; border-radius: 4px;
+      white-space: nowrap; pointer-events: none; visibility: hidden;
+      font-family: var(--litmus-font, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+    }
+
+    /* ── Status column cell ── */
+    tbody td.status,
+    thead th.status { padding: 8px 16px 8px 8px; }
+
+    /* ── Status toggle ── */
+    .litmus-status-cell {
+      display: flex; gap: 4px; justify-content: flex-end; flex-wrap: nowrap;
+    }
+    .litmus-status-btn {
+      width: 22px; height: 22px;
+      min-width: 22px; min-height: 22px;
+      max-width: 22px; max-height: 22px;
+      flex-shrink: 0;
+      border-radius: 5px;
+      border: 0.5px solid #E5E5EA; background: #FFFFFF;
+      color: #6E6E73; font-size: 12px; font-family: inherit;
+      display: inline-flex; align-items: center; justify-content: center;
+      user-select: none; outline: none;
+      padding: 0; line-height: 22px;
+      box-sizing: border-box;
+      -webkit-appearance: none;
+      transition: background-color 0.1s, border-color 0.1s;
+    }
+    .litmus-status-btn[data-role="control"] { cursor: pointer; }
+    .litmus-status-btn[data-role="control"]:hover { background: #F5F5F7; border-color: #D2D2D7; }
+    .litmus-status-btn[data-role="indicator"] { cursor: default; color: #C7C7CC; }
+    .litmus-status-btn[data-active="true"] { border-color: transparent; color: #FFFFFF; }
+    .litmus-status-btn[data-state="blacklisted"][data-active="true"] { background: #3A3A3C; }
+    .litmus-status-btn[data-state="whitelisted"][data-active="true"] { background: #5A8A5A; }
+    .litmus-status-btn[data-role="indicator"][data-auto-hidden="true"] {
+      background: #C44545; border-color: transparent; color: #FFFFFF;
+    }
+
+    /* Row state — text dimming */
+    tbody tr.row-hide .td-author-name,
+    tbody tr.row-hide .td-num,
+    tbody tr.row-hide .litmus-ai-pct { color: #A1A1A6; }
+
+    /* ── Indicator column ── */
+    tbody tr { position: relative; }
+    .td-indicator {
+      position: relative; padding: 0; overflow: visible; width: 32px;
+    }
+    .row-bar {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    }
+    .row-bar-anthracite  { background: #3A3A3C; }
+    .row-bar-auto-hidden { background: #C44545; }
+    .row-bar-solid-green { background: #5A8A5A; }
+/* ── Action links ── */
+    .action-link {
+      font-size: 12px; color: #0071E3;
+      background: none; border: none; cursor: pointer;
+      padding: 0; font-family: inherit; text-decoration: none;
+    }
+    .action-link:hover { text-decoration: underline; }
+    .action-link.destructive { color: #3A3A3C; }
+    .action-links { display: flex; gap: 12px; justify-content: flex-end; }
+
+    /* ── Table column widths ── */
+    #authors-table col.c-indicator { width: 32px; }
+    #authors-table col.c-author    { width: 300px; }
+    #authors-table col.c-posts     { width: 60px; }
+    #authors-table col.c-ai        { width: 250px; }
+    #authors-table col.c-last      { width: 100px; }
+    #authors-table col.c-action    { width: 130px; }
+
+    /* ── Empty state ── */
+    .empty-row td {
+      padding: 60px 32px; text-align: center;
+      font-size: 13px; color: #6E6E73;
+    }
+
+    /* ── Modal (Reset stats) ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.25);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: #FFFFFF; border: 0.5px solid #E5E5EA;
+      border-radius: 8px; padding: 20px 24px; width: 320px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .modal-msg { font-size: 13px; color: #1D1D1F; line-height: 1.5; margin-bottom: 16px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .modal-btn {
+      font-family: inherit; font-size: 12px; padding: 5px 12px;
+      border-radius: 5px; border: none; outline: none; cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .modal-btn-cancel { background: #F5F5F7; color: #1D1D1F; }
+    .modal-btn-cancel:hover { background: #E5E5EA; }
+    .modal-btn-destructive { background: #C44545; color: #FFFFFF; }
+    .modal-btn-destructive:hover { background: #A83939; }
+  </style>
+</head>
+<body>
+  <div class="page-content">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <div class="page-header-row1">
+      <div class="page-title-wrap">
+        <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="10" cy="10" r="7.5" fill="none" stroke="#1D1D1F" stroke-width="1.5"/>
+          <circle cx="10" cy="10" r="3" fill="#1D1D1F"/>
+        </svg>
+        <span class="page-title">Litmus</span>
+      </div>
+      <span class="page-header-actions">
+        <button class="hdr-btn hdr-btn-destructive" id="btn-reset-stats">Reset stats</button>
+        <button class="hdr-btn hdr-btn-accent" id="btn-open-popup">Open popup</button>
+      </span>
+    </div>
+    <div class="page-subtitle">Author statistics — updated as you scroll your feed</div>
+
+    <!-- Stats line -->
+    <div class="litmus-stats-line">
+      <span><span class="litmus-stat-num" id="sum-posts">—</span> classified</span>
+      <span class="litmus-stat-sep">·</span>
+      <span><span class="litmus-stat-num" id="sum-authors">—</span> authors</span>
+      <span class="litmus-stat-sep">·</span>
+      <span><span class="litmus-stat-num" id="sum-auto-hidden">—</span> auto-hidden</span>
+      <span class="litmus-stat-sep">·</span>
+      <span><span class="litmus-stat-num" id="sum-blacklisted">—</span> blacklisted</span>
+      <span class="litmus-stat-sep">·</span>
+      <span><span class="litmus-stat-num" id="sum-whitelisted">—</span> whitelisted</span>
+      <span class="litmus-stat-sep">·</span>
+      <span><span class="litmus-stat-num" id="sum-words-month">—</span> words this month</span>
+    </div>
+  </div>
+
+  <!-- Threshold strip -->
+  <div class="threshold-strip">
+    <div class="threshold-left">
+      <svg class="threshold-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="7" cy="7" r="6" stroke="#A1A1A6" stroke-width="1.2"/>
+        <rect x="6.3" y="6" width="1.4" height="5" rx="0.7" fill="#A1A1A6"/>
+        <rect x="6.3" y="3.5" width="1.4" height="1.4" rx="0.7" fill="#A1A1A6"/>
+      </svg>
+      <span class="threshold-tag">Auto-hide rule</span>
+      <span class="threshold-sentence">
+        Hide authors with
+        <input type="text" inputmode="numeric" id="threshold-min-posts" value="5">+
+        posts and
+        <span class="input-suffix-wrap">
+          <input type="text" inputmode="numeric" id="threshold-min-ai" value="80">
+          <span class="suffix">%</span>
+        </span>
+        AI rate
+      </span>
+    </div>
+
+    <div class="threshold-preview">
+      <span class="threshold-preview-text">
+        <span id="preview-delta" data-litmus-threshold-preview></span><span id="preview-currently" data-litmus-threshold-current></span>
+      </span>
+      <button class="threshold-reset" id="threshold-reset" disabled>Reset</button>
+      <button class="threshold-apply" id="threshold-apply" disabled>Apply</button>
+    </div>
+  </div>
+
+  <!-- VIEW filter bar -->
+  <div class="view-filter-bar">
+    <span class="view-label">VIEW</span>
+    <div class="view-seg" id="view-seg-ctrl">
+      <button class="view-seg-btn active" data-view="all">All<span class="view-count" id="vc-all"></span></button>
+      <button class="view-seg-btn" data-view="visible">Visible<span class="view-count" id="vc-visible"></span></button>
+      <button class="view-seg-btn" data-view="auto-hidden">Auto-hidden<span class="view-count" id="vc-auto-hidden"></span></button>
+      <button class="view-seg-btn" data-view="blacklisted">Blacklisted<span class="view-count" id="vc-blacklisted"></span></button>
+      <button class="view-seg-btn" data-view="whitelisted">Whitelisted<span class="view-count" id="vc-whitelisted"></span></button>
+    </div>
+    <div class="view-divider"></div>
+    <input type="text" class="filter-input" id="filter-name" placeholder="Filter by name…">
+    <label class="filter-label-num">Min posts <input type="text" inputmode="numeric" class="filter-input-num" id="filter-min-posts" placeholder="—"></label>
+    <span class="filter-count" id="filter-count"></span>
+  </div>
+
+  <!-- Unified authors table -->
+  <div class="table-wrap">
+    <table id="authors-table">
+      <colgroup>
+        <col class="c-indicator">
+        <col class="c-author">
+        <col class="c-posts">
+        <col class="c-ai">
+        <col class="c-last">
+        <col class="c-action">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="td-indicator"></th>
+          <th data-col="name">Author</th>
+          <th data-col="total"  class="right">Posts</th>
+          <th data-col="ai"     class="right sort-active">AI %</th>
+          <th data-col="lastSeen" class="right">Last seen</th>
+          <th class="status right">Status</th>
+        </tr>
+      </thead>
+      <tbody id="author-tbody">
+        <tr><td colspan="6" style="padding:60px 32px;text-align:center;color:#6E6E73">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  </div><!-- /.page-content -->
+
+  <!-- Bar breakdown tooltip -->
+  <div class="litmus-bar-tooltip" id="litmus-bar-tooltip"></div>
+
+  <!-- Reset stats modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-msg" id="modal-msg"></div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel"      id="modal-cancel">Cancel</button>
+        <button class="modal-btn modal-btn-destructive" id="modal-confirm">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="stats.js"></script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Selector Test</title>
+  <style>
+    body { font-family: monospace; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    h1   { font-size: 1.1rem; }
+    .warn  { background: #fff3cd; border: 1px solid #ffc107; padding: .75rem; margin-bottom: 1rem; }
+    .sample { border: 1px solid #ccc; margin-bottom: 1.5rem; padding: 1rem; }
+    .sample h2 { font-size: 1rem; margin: 0 0 .5rem; }
+    .pass { color: green; }
+    .fail { color: red; }
+    .val  { color: #555; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+<h1>Litmus — Selector Test</h1>
+
+<div class="warn" id="http-warning" style="display:none">
+  ⚠️ <strong>Must be served over HTTP.</strong> ES modules and cross-directory
+  fetch are blocked on <code>file://</code> in Chrome.<br>
+  Run from the project root: <code>python3 -m http.server 8080</code>
+  then open <a href="http://localhost:8080/tests/selector-test.html">
+  http://localhost:8080/tests/selector-test.html</a>
+</div>
+
+<div id="output"></div>
+
+<script>
+// Selectors are inlined here instead of imported from selectors.js because
+// ES module imports are blocked on file:// in Chrome. Keep in sync with selectors.js.
+const SELECTORS = {
+  POST_WRAPPER: [
+    'div[role="listitem"][componentkey*="FeedType_MAIN_FEED"]',
+    'div[data-testid="mainFeed"] div[role="listitem"]',
+  ],
+  POST_BODY:        '[data-testid="expandable-text-box"]',
+  FEED_CONTAINER:   'div[data-testid="mainFeed"]',
+  PROMOTED_MARKER: [
+    '[data-testid="feed-item-promoted-tag"]',
+    '[data-testid="sponsored-tag"]',
+    '[aria-label="Promoted"]',
+    '[componentkey*="SPONSORED"]',
+  ],
+};
+
+function getCacheKey(el) {
+  const raw = el.getAttribute('componentkey') ?? '';
+  const m = raw.match(/^expanded(.+?)FeedType_/);
+  return m ? m[1] : null;
+}
+
+function findFirst(root, selectorList) {
+  for (const sel of selectorList) {
+    const m = root.querySelector(sel);
+    if (m) return { selector: sel, element: m };
+  }
+  return null;
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+
+function row(label, pass, value) {
+  return `<div>
+    <span class="${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'} ${label}</span>
+    ${value !== undefined ? `<br><span class="val">    ${value}</span>` : ''}
+  </div>`;
+}
+
+function renderSample(label, html) {
+  const doc  = new DOMParser().parseFromString(html, 'text/html');
+  const out  = [];
+
+  // 1. POST_WRAPPER (primary selector, no feed container wrapper needed since
+  //    the sample IS just the post element)
+  const wrapperResult = findFirst(doc.body, SELECTORS.POST_WRAPPER);
+  const wrapper       = wrapperResult?.element ?? null;
+  out.push(row(
+    `POST_WRAPPER via "${wrapperResult?.selector ?? 'none'}"`,
+    !!wrapper,
+    wrapper ? `componentkey="${wrapper.getAttribute('componentkey')?.slice(0, 60)}…"` : 'no match'
+  ));
+
+  // 2. getCacheKey
+  const cacheKey = wrapper ? getCacheKey(wrapper) : null;
+  out.push(row(
+    'getCacheKey()',
+    !!cacheKey,
+    cacheKey ?? 'null — regex did not match'
+  ));
+
+  // 3. POST_BODY
+  const body = wrapper?.querySelector(SELECTORS.POST_BODY) ?? null;
+  out.push(row(
+    `POST_BODY "${SELECTORS.POST_BODY}"`,
+    !!body,
+    body ? `"${body.textContent.trim().slice(0, 80)}…"` : 'no match'
+  ));
+
+  // 4. PROMOTED_MARKER (expected: not found in normal posts)
+  const promoted = wrapper
+    ? SELECTORS.PROMOTED_MARKER.map(s => wrapper.querySelector(s)).find(Boolean)
+    : null;
+  out.push(row(
+    'PROMOTED_MARKER (expected: not found)',
+    promoted === null,
+    promoted ? `found: ${promoted.outerHTML.slice(0, 80)}` : 'not found ✓'
+  ));
+
+  return `<div class="sample">
+    <h2>${label}</h2>
+    ${out.join('\n')}
+  </div>`;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+const SAMPLES = [
+  { path: '../sample-posts/ai/1.html',    label: 'ai/1.html' },
+  { path: '../sample-posts/ai/2.html',    label: 'ai/2.html' },
+  { path: '../sample-posts/ai/3.html',    label: 'ai/3.html' },
+  { path: '../sample-posts/human/1.html', label: 'human/1.html' },
+  { path: '../sample-posts/human/2.html', label: 'human/2.html' },
+  { path: '../sample-posts/human/3.html', label: 'human/3.html' },
+];
+
+async function run() {
+  const outputEl = document.getElementById('output');
+  const results  = [];
+
+  for (const { path, label } of SAMPLES) {
+    let html;
+    try {
+      const resp = await fetch(path);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      html = await resp.text();
+    } catch (err) {
+      if (location.protocol === 'file:') {
+        document.getElementById('http-warning').style.display = '';
+      }
+      results.push(`<div class="sample">
+        <h2>${label}</h2>
+        <span class="fail">✗ Could not load: ${err.message}</span>
+      </div>`);
+      continue;
+    }
+    results.push(renderSample(label, html));
+  }
+
+  outputEl.innerHTML = results.join('\n');
+}
+
+run();
+</script>
+</body>
+</html>

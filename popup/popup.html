@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Litmus</title>
+  <link rel="stylesheet" href="../shared/tokens.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      max-height: 640px;
+      overflow-y: auto;
+      font-family: var(--lai-font, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif);
+      font-size: 13px;
+      color: var(--lai-text, #1D1D1F);
+      background: var(--lai-bg, #FFFFFF);
+      border: 0.5px solid var(--lai-border, #E5E5EA);
+      border-radius: var(--lai-r-4, 10px);
+    }
+
+    /* ── Hairline divider ── */
+    .divider {
+      height: 0.5px;
+      background: var(--lai-border, #E5E5EA);
+      flex-shrink: 0;
+    }
+
+    /* ── Section ── */
+    .section { padding: 12px 16px; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--lai-text-2, #6E6E73);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 8px;
+    }
+
+    /* ── Buttons — text only, no fill, no border ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      background: none;
+      border: none;
+      outline: none;
+      box-shadow: none;
+      padding: 3px 4px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+      cursor: pointer;
+      transition: background 150ms ease;
+      white-space: nowrap;
+      -webkit-appearance: none;
+    }
+    .btn-primary     { color: var(--lai-accent, #0071E3); }
+    .btn-secondary   { color: var(--lai-text-2, #6E6E73); }
+    .btn-destructive { color: var(--lai-destructive, #C44545); }
+    .btn:hover:not(:disabled) { background: var(--lai-bg-inset, #F5F5F7); }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 16px;
+    }
+    .header-name    { font-size: 13px; font-weight: 500; color: var(--lai-text, #1D1D1F); }
+    .header-version { font-size: 11px; color: #A1A1A6; }
+
+    /* ── Stats bar (Option C) ── */
+    .stats-bar-section { padding: 11px 16px 12px; }
+    .stats-bar-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .stats-number {
+      font-size: 18px; font-weight: 500; color: var(--lai-text, #1D1D1F);
+      line-height: 1; font-variant-numeric: tabular-nums;
+    }
+    .stats-unit { font-size: 11px; color: var(--lai-text-2, #6E6E73); margin-left: 4px; }
+    .stats-ai-pct { font-size: 11px; color: #A1A1A6; }
+    .stats-cls-bar {
+      height: 6px; background: var(--lai-bg-inset, #F5F5F7);
+      border-radius: 3px; overflow: hidden; display: flex; margin-bottom: 8px;
+    }
+    .stats-cls-seg { flex-shrink: 0; }
+    .stats-cls-seg.ai    { background: #C44545; }
+    .stats-cls-seg.mixed { background: #B8893E; }
+    .stats-cls-seg.human { background: #5A8A5A; }
+    .stats-legend {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .stats-legend-item {
+      display: flex; align-items: center; gap: 3px;
+      font-size: 11px; color: var(--lai-text-2, #6E6E73);
+    }
+    .stats-legend-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .stats-legend-dot.ai    { background: #C44545; }
+    .stats-legend-dot.mixed { background: #B8893E; }
+    .stats-legend-dot.human { background: #5A8A5A; }
+    .stats-legend-sep { font-size: 11px; color: #A1A1A6; }
+
+    /* ── Filter section ── */
+    .filter-section { background: var(--lai-bg-grouped, #FAFAFA); }
+    .filter-helper  { font-size: 11px; color: #A1A1A6; margin-top: 3px; line-height: 1.4; }
+
+    /* ── API Status section ── */
+    .api-section { padding: 10px 16px; }
+    .api-section-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .api-usage-right {
+      font-size: 11px; color: #A1A1A6;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .api-usage-right.err { color: var(--lai-destructive, #C44545); }
+
+    .key-saved-row   { display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
+    .key-field {
+      flex: 1;
+      background: var(--lai-bg-grouped, #FAFAFA);
+      border: 0.5px solid var(--lai-border, #E5E5EA);
+      border-radius: 4px;
+      padding: 5px 8px;
+    }
+    .key-masked {
+      font-family: var(--lai-font-mono, 'SF Mono', Menlo, monospace);
+      font-size: 12px; color: var(--lai-text, #1D1D1F); letter-spacing: 0.05em;
+    }
+    .key-input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
+    .key-input-row input[type="password"] {
+      flex: 1; padding: 5px 8px;
+      border: 1px solid var(--lai-border-input, #D2D2D7);
+      border-radius: 4px; font-family: inherit; font-size: 13px;
+      color: var(--lai-text, #1D1D1F); background: var(--lai-bg, #FFFFFF); outline: none;
+    }
+    .key-input-row input[type="password"]:focus { border-color: var(--lai-border-focus, #86868B); }
+    .key-input-row input::placeholder { color: #A1A1A6; }
+    .key-hint { font-size: 11px; color: #A1A1A6; margin-top: 5px; }
+    .key-hint a { color: var(--lai-accent, #0071E3); text-decoration: none; }
+    .key-hint a:hover { text-decoration: underline; }
+    .key-status { font-size: 11px; color: var(--lai-text-2, #6E6E73); margin-top: 4px; }
+    .key-status.ok  { color: var(--lai-human, #5A8A5A); }
+    .key-status.err { color: var(--lai-destructive, #C44545); }
+
+    .usage-bar-wrap {
+      height: 1.5px; background: var(--lai-bg-inset, #F5F5F7);
+      border-radius: 1px; margin-top: 8px; overflow: hidden;
+    }
+    .usage-bar-fill { height: 100%; background: #A1A1A6; border-radius: 1px; transition: width 200ms ease; }
+    .usage-helper { font-size: 10px; color: #A1A1A6; margin-top: 4px; margin-bottom: 0; }
+
+    /* ── Settings section ── */
+    .setting-row {
+      display: flex; align-items: center;
+      justify-content: space-between; padding: 3px 0;
+    }
+    .setting-label { font-size: 13px; color: var(--lai-text, #1D1D1F); }
+
+    /* Sub-group inside Settings */
+    .setting-group        { margin-top: 10px; }
+    .setting-group-label  {
+      font-size: 10px; color: #A1A1A6; text-transform: uppercase;
+      letter-spacing: 0.4px; margin-bottom: 6px;
+    }
+
+    /* Compact number/text inputs used inside Settings */
+    .setting-input {
+      width: 64px; padding: 4px 8px;
+      border: 0.5px solid #D2D2D7; border-radius: 4px;
+      font-family: inherit; font-size: 12px; color: #1D1D1F; background: #FFFFFF;
+      outline: none; text-align: right; font-variant-numeric: tabular-nums;
+      -webkit-appearance: none; -moz-appearance: textfield;
+    }
+    .setting-input::-webkit-inner-spin-button,
+    .setting-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .setting-input:focus { border-color: #86868B; }
+    .setting-input.err   { border-color: #C44545; }
+    #input-monthly-limit { width: 96px; }
+
+    /* Inline % suffix wrapper */
+    .input-suffix-wrap { position: relative; display: inline-block; }
+    .input-suffix-wrap input { padding-right: 22px; }
+    .input-suffix-wrap .suffix {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      font-size: 12px; color: #6E6E73; pointer-events: none;
+    }
+
+    .setting-error {
+      font-size: 11px; color: #C44545; margin-top: 3px; display: none;
+    }
+    .setting-hint {
+      font-size: 11px; color: #6E6E73; margin-top: 6px; line-height: 1.45;
+    }
+
+    /* Greyscale iOS-style toggle */
+    .toggle {
+      position: relative; display: inline-block;
+      width: 32px; height: 18px; flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: #E5E5EA;
+      border-radius: 9px; cursor: pointer; transition: background 150ms ease;
+    }
+    .toggle-slider::after {
+      content: ''; position: absolute;
+      width: 14px; height: 14px; top: 2px; left: 2px;
+      background: #fff; border-radius: 50%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.18); transition: left 150ms ease;
+    }
+    .toggle input:checked + .toggle-slider            { background: #1D1D1F; }
+    .toggle input:checked + .toggle-slider::after     { left: 16px; }
+
+    /* ── Dev Tools section ── */
+    .dev-row {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+    }
+    .dev-row:last-child { margin-bottom: 0; }
+    .dev-info  { font-size: 12px; color: var(--lai-text-2, #6E6E73); }
+    .dev-info strong { color: var(--lai-text, #1D1D1F); font-weight: 500; }
+    .dev-actions { display: flex; gap: 2px; }
+    .cache-stats-line { font-size: 11px; color: #A1A1A6; margin-top: 4px; }
+
+    /* ── Footer ── */
+    .footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 16px; background: var(--lai-bg-grouped, #FAFAFA);
+    }
+
+    /* ── Confirm modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.25);
+      display: none; align-items: center; justify-content: center;
+      border-radius: 10px; z-index: 100;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: #FFFFFF; border: 0.5px solid #E5E5EA;
+      border-radius: 6px; padding: 16px; width: 268px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .modal-message  { font-size: 13px; color: #1D1D1F; margin-bottom: 12px; line-height: 1.45; }
+    .modal-actions  { display: flex; justify-content: flex-end; gap: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-name">Litmus</span>
+    <span class="header-version">v<span id="hdr-version">0.2.0</span></span>
+  </div>
+  <div class="divider"></div>
+
+  <!-- Stats bar -->
+  <div class="stats-bar-section">
+    <div class="stats-bar-header">
+      <div>
+        <span class="stats-number" id="stat-total">—</span><span class="stats-unit">posts classified</span>
+      </div>
+      <span class="stats-ai-pct" id="stat-ai-pct"></span>
+    </div>
+    <div class="stats-cls-bar">
+      <div class="stats-cls-seg ai"    id="stat-seg-ai"    style="flex:0"></div>
+      <div class="stats-cls-seg mixed" id="stat-seg-mixed" style="flex:0"></div>
+      <div class="stats-cls-seg human" id="stat-seg-human" style="flex:0"></div>
+    </div>
+    <div class="stats-legend">
+      <span class="stats-legend-item">
+        <span class="stats-legend-dot ai"></span><span id="stat-ai-count">—</span> AI
+      </span>
+      <span class="stats-legend-sep">·</span>
+      <span class="stats-legend-item">
+        <span class="stats-legend-dot mixed"></span><span id="stat-mixed-count">—</span> Mixed
+      </span>
+      <span class="stats-legend-sep">·</span>
+      <span class="stats-legend-item">
+        <span class="stats-legend-dot human"></span><span id="stat-human-count">—</span> Human
+      </span>
+    </div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- Filters (moved above API Status) -->
+  <div class="section filter-section">
+    <div class="section-label">Filters</div>
+
+    <div class="setting-row">
+      <span class="setting-label">Skip promoted posts</span>
+      <label class="toggle" title="Don't analyze or track promoted/ad posts">
+        <input type="checkbox" id="toggle-skip-promoted">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <p class="filter-helper">Hides ads, regardless of who posts them.</p>
+
+    <div class="setting-row" style="margin-top:10px">
+      <span class="setting-label">Skip suggested posts</span>
+      <label class="toggle" title="Don't analyze or track algorithmic post recommendations">
+        <input type="checkbox" id="toggle-skip-suggested">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <p class="filter-helper">Hides algorithmic post recommendations.</p>
+
+    <div class="setting-row" style="margin-top:10px">
+      <span class="setting-label">Skip company posts</span>
+      <label class="toggle" title="Don't analyze or track posts from company pages">
+        <input type="checkbox" id="toggle-skip-companies">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <p class="filter-helper">Hides all posts from company pages.</p>
+
+    <div class="setting-row" style="margin-top:10px">
+      <span class="setting-label">Skip "Recommended for you"</span>
+      <label class="toggle" title="Hide the 'people to follow' suggestion blocks">
+        <input type="checkbox" id="toggle-skip-recommended">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <p class="filter-helper">Hides the "people to follow" suggestion blocks.</p>
+  </div>
+  <div class="divider"></div>
+
+  <!-- API Status (merged API key + Usage) -->
+  <div class="api-section">
+    <div class="api-section-header">
+      <span class="section-label" style="margin-bottom:0">API Status</span>
+      <span class="api-usage-right" id="api-usage-right"></span>
+    </div>
+
+    <!-- No key state -->
+    <div id="apikey-nokey">
+      <div class="key-input-row">
+        <input type="password" id="apikey-input" placeholder="Paste your API key…" autocomplete="off">
+        <button class="btn btn-primary" id="btn-apikey-save">Save</button>
+      </div>
+      <div class="key-hint">
+        <a href="https://gptzero.me" target="_blank" rel="noopener">Get a free key at gptzero.me</a>
+      </div>
+    </div>
+
+    <!-- Key saved state -->
+    <div id="apikey-saved" style="display:none">
+      <div class="key-saved-row">
+        <div class="key-field">
+          <span class="key-masked" id="apikey-masked"></span>
+        </div>
+        <button class="btn btn-primary"     id="btn-apikey-replace">Replace</button>
+        <button class="btn btn-destructive" id="btn-apikey-clear">Clear</button>
+      </div>
+      <div class="usage-bar-wrap">
+        <div class="usage-bar-fill" id="usage-bar" style="width:0%"></div>
+      </div>
+      <div class="usage-helper" id="usage-helper"></div>
+    </div>
+
+    <div class="key-status" id="apikey-status" style="display:none"></div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- Settings -->
+  <div class="section">
+    <div class="section-label">Settings</div>
+
+    <!-- Developer mode toggle -->
+    <div class="setting-row">
+      <span class="setting-label">Developer mode</span>
+      <label class="toggle" title="Show dev tools in this popup">
+        <input type="checkbox" id="toggle-dev-mode">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+  </div>
+
+  <!-- Dev Tools + Settings (hidden unless developer mode is on) -->
+  <div id="dev-tools-section" style="display:none">
+    <div class="divider"></div>
+    <div class="section">
+
+      <!-- Monthly word limit -->
+      <div class="setting-group" style="margin-top:0">
+        <div class="setting-group-label">API Usage</div>
+        <div class="setting-row">
+          <span class="setting-label">Monthly word limit</span>
+          <input type="text" inputmode="numeric" class="setting-input" id="input-monthly-limit"
+                 value="10000">
+        </div>
+        <div class="setting-error" id="monthly-limit-error"></div>
+      </div>
+
+      <!-- Detection thresholds -->
+      <div class="setting-group">
+        <div class="setting-group-label">Detection Thresholds</div>
+        <div class="setting-row">
+          <span class="setting-label">Min posts before flagging</span>
+          <input type="text" inputmode="numeric" class="setting-input" id="input-min-posts" value="5">
+        </div>
+        <div class="setting-row" style="margin-top:6px">
+          <span class="setting-label">Min AI rate</span>
+          <span class="input-suffix-wrap">
+            <input type="text" inputmode="numeric" class="setting-input" id="input-ai-threshold"
+                   value="80">
+            <span class="suffix">%</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="divider" style="margin: 12px -16px; width: calc(100% + 32px);"></div>
+      <div class="section-label">Dev Tools</div>
+      <div class="dev-row">
+        <span class="dev-info">Dev log: <strong id="devlog-count">0</strong> entries</span>
+        <span class="dev-actions">
+          <button class="btn btn-primary"     id="btn-export-devlog">Export JSON</button>
+          <button class="btn btn-destructive" id="btn-clear-log">Clear</button>
+        </span>
+      </div>
+      <div class="dev-row">
+        <button class="btn btn-secondary" style="padding-left:0" id="btn-clear-cache">Clear post cache</button>
+      </div>
+      <div class="cache-stats-line" id="cache-stats-line"></div>
+
+      <!-- Reset controls -->
+      <div class="dev-row" style="margin-top:10px">
+        <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-author-stats">Reset author stats</button>
+      </div>
+      <div class="dev-row">
+        <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-word-counter">Reset word counter</button>
+      </div>
+      <div class="dev-row">
+        <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-everything">Reset everything</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn btn-primary" id="btn-open-stats">Open stats →</button>
+  </div>
+
+  <!-- Confirm modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <p class="modal-message" id="modal-message"></p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary"   id="modal-cancel">Cancel</button>
+        <button class="btn btn-destructive" id="modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
