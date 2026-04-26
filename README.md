@@ -4,11 +4,6 @@ A Chrome extension that flags AI-generated posts in your LinkedIn feed using GPT
 
 ---
 
-<!-- Screenshot path is a placeholder. Drop docs/screenshot.png into the repo to make this render. -->
-![Litmus screenshot](docs/screenshot.png)
-
----
-
 ## What it does
 
 Litmus runs in the background as you scroll your LinkedIn feed. Each post gets an inline
