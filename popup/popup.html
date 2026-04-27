@@ -120,7 +120,6 @@
       font-size: 11px; color: #A1A1A6;
       font-variant-numeric: tabular-nums; white-space: nowrap;
     }
-    .api-usage-right.err { color: var(--lai-destructive, #C44545); }
 
     .key-saved-row   { display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
     .key-field {
@@ -183,8 +182,6 @@
     .setting-input::-webkit-outer-spin-button { -webkit-appearance: none; }
     .setting-input:focus { border-color: #86868B; }
     .setting-input.err   { border-color: #C44545; }
-    #input-monthly-limit { width: 96px; }
-
     /* Inline % suffix wrapper */
     .input-suffix-wrap { position: relative; display: inline-block; }
     .input-suffix-wrap input { padding-right: 22px; }
@@ -358,7 +355,7 @@
         <button class="btn btn-primary"     id="btn-apikey-replace">Replace</button>
         <button class="btn btn-destructive" id="btn-apikey-clear">Clear</button>
       </div>
-      <div class="usage-bar-wrap">
+      <div class="usage-bar-wrap" id="usage-bar-wrap">
         <div class="usage-bar-fill" id="usage-bar" style="width:0%"></div>
       </div>
       <div class="usage-helper" id="usage-helper"></div>
@@ -388,19 +385,8 @@
     <div class="divider"></div>
     <div class="section">
 
-      <!-- Monthly word limit -->
-      <div class="setting-group" style="margin-top:0">
-        <div class="setting-group-label">API Usage</div>
-        <div class="setting-row">
-          <span class="setting-label">Monthly word limit</span>
-          <input type="text" inputmode="numeric" class="setting-input" id="input-monthly-limit"
-                 value="10000">
-        </div>
-        <div class="setting-error" id="monthly-limit-error"></div>
-      </div>
-
       <!-- Detection thresholds -->
-      <div class="setting-group">
+      <div class="setting-group" style="margin-top:0">
         <div class="setting-group-label">Detection Thresholds</div>
         <div class="setting-row">
           <span class="setting-label">Min posts before flagging</span>
@@ -433,9 +419,6 @@
       <!-- Reset controls -->
       <div class="dev-row" style="margin-top:10px">
         <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-author-stats">Reset author stats</button>
-      </div>
-      <div class="dev-row">
-        <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-word-counter">Reset word counter</button>
       </div>
       <div class="dev-row">
         <button class="btn btn-destructive" style="padding-left:0" id="btn-reset-everything">Reset everything</button>

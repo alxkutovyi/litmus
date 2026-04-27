@@ -8,9 +8,9 @@
 //   Response: { label, score, confidenceCategory, engine: 'gptzero' }  (success)
 //           | { error: 'no-key' | 'auth' | 'rate-limit' | 'network' }  (failure)
 
-const APIKEY_KEY  = 'litmus:gptzeroApiKey';
-const USAGE_KEY   = 'litmus:gptzeroUsage';
-const GPTZERO_URL = 'https://api.gptzero.me/v2/predict/text';
+const APIKEY_KEY       = 'litmus:gptzeroApiKey';
+const GPTZERO_URL      = 'https://api.gptzero.me/v2/predict/text';
+const USAGE_STATS_KEY  = 'litmus:usageStats';
 
 // ── Storage migration ──────────────────────────────────────────────────────────
 // Migration 1: namespace authorIds as "person:<slug>" or "company:<slug>".
@@ -168,30 +168,47 @@ async function runMigrations() {
 
 runMigrations().catch(err => console.error('[Litmus] Migration failed:', err));
 
-// ── Usage counter ─────────────────────────────────────────────────────────────
+// ── GPTZero usage-stats fetch ─────────────────────────────────────────────────
+// Calls the /v3/usage-stats endpoint and caches the result.
+// On any error returns { error } without overwriting the cached stats.
 
-function currentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-const LIFETIME_KEY = 'litmus:gptzeroUsageLifetime';
-
-async function incrementUsage(words) {
+async function fetchUsageStats(apiKey) {
+  let resp;
   try {
-    const result  = await chrome.storage.local.get([USAGE_KEY, LIFETIME_KEY]);
-    const stored  = result[USAGE_KEY];
-    const month   = currentMonth();
-    const current = (!stored || stored.month !== month)
-      ? { month, wordsSent: 0 }
-      : { ...stored };
-    current.wordsSent += words;
-    const lifetime = (result[LIFETIME_KEY] ?? 0) + words;
-    await chrome.storage.local.set({ [USAGE_KEY]: current, [LIFETIME_KEY]: lifetime });
-  } catch { /* non-critical — counter drift is acceptable */ }
+    resp = await fetch('https://api.gptzero.me/v3/usage-stats', {
+      headers: { 'x-api-key': apiKey },
+    });
+  } catch {
+    return { error: 'network' };
+  }
+
+  if (resp.status === 401) return { error: 'auth' };
+  if (resp.status === 429) return { error: 'rate-limit' };
+  if (!resp.ok)            return { error: 'network' };
+
+  let body;
+  try { body = await resp.json(); } catch { return { error: 'network' }; }
+
+  const d = body?.data;
+  if (!d || typeof d.words_used === 'undefined') return { error: 'malformed' };
+
+  const stats = {
+    wordsLeft:  d.words_left  ?? null,
+    wordsUsed:  d.words_used  ?? 0,
+    cycleStart: d.cycle_start ?? null,
+    cycleEnd:   d.cycle_end   ?? null,
+    plan:       d.plan        ?? null,
+    fetchedAt:  Date.now(),
+  };
+
+  await chrome.storage.local.set({ [USAGE_STATS_KEY]: stats });
+  return stats;
 }
 
-// ── GPTZero fetch (with single retry) ─────────────────────────────────────────
+// Counter: refresh usage stats every 25 successful classifications.
+let _classifyCount = 0;
+
+// ── GPTZero classify fetch (with single retry) ────────────────────────────────
 
 async function fetchGPTZero(text, apiKey) {
   const url  = GPTZERO_URL;
@@ -236,38 +253,52 @@ async function fetchGPTZero(text, apiKey) {
     label = 'human'; score = probs.human ?? 0;
   }
 
-  // Increment monthly word counter on every successful response.
-  const words = text.split(/\s+/).filter(Boolean).length;
-  await incrementUsage(words);
-
   return { label, score, confidenceCategory, engine: 'gptzero' };
 }
 
 // ── Message handler ───────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== 'classify') return false;
 
-  (async () => {
-    let apiKey;
-    try {
+  if (message.type === 'classify') {
+    (async () => {
+      let apiKey;
+      try {
+        const result = await chrome.storage.local.get(APIKEY_KEY);
+        apiKey = result[APIKEY_KEY];
+      } catch {
+        sendResponse({ error: 'network' });
+        return;
+      }
+
+      if (!apiKey) { sendResponse({ error: 'no-key' }); return; }
+
+      const result = await fetchGPTZero(message.text, apiKey);
+      sendResponse(result);
+
+      // Opportunistically refresh usage stats every 25 successful calls.
+      if (!result.error) {
+        _classifyCount++;
+        if (_classifyCount % 25 === 0) {
+          fetchUsageStats(apiKey).catch(() => {});
+        }
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'fetchUsageStats') {
+    (async () => {
       const result = await chrome.storage.local.get(APIKEY_KEY);
-      apiKey = result[APIKEY_KEY];
-    } catch {
-      sendResponse({ error: 'network' });
-      return;
-    }
+      const apiKey = result[APIKEY_KEY];
+      if (!apiKey) { sendResponse({ error: 'no-key' }); return; }
+      const stats = await fetchUsageStats(apiKey);
+      sendResponse(stats);
+    })();
+    return true;
+  }
 
-    if (!apiKey) {
-      sendResponse({ error: 'no-key' });
-      return;
-    }
-
-    const result = await fetchGPTZero(message.text, apiKey);
-    sendResponse(result);
-  })();
-
-  return true; // keep message channel open for async sendResponse
+  return false;
 });
 
 // ── Dev utility ───────────────────────────────────────────────────────────────

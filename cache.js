@@ -16,14 +16,14 @@
   let _writeCount = 0;
 
   async function _evictIfNeeded() {
-    const all        = await chrome.storage.local.get(null);
+    const all        = await LAI.safeStorage.get(null);
     const postPairs  = Object.entries(all).filter(([k]) => k.startsWith(PREFIX));
     if (postPairs.length <= EVICT_MAX) return;
 
     // Sort ascending by cachedAt so index 0 is the oldest.
     postPairs.sort((a, b) => (a[1]?.cachedAt ?? 0) - (b[1]?.cachedAt ?? 0));
     const toDelete = postPairs.slice(0, EVICT_COUNT).map(([k]) => k);
-    await chrome.storage.local.remove(toDelete);
+    await LAI.safeStorage.remove(toDelete);
     console.log(`${LAI.LOG_PREFIX} cache evicted ${toDelete.length} oldest entries (had ${postPairs.length})`);
   }
 
@@ -31,12 +31,12 @@
 
     async get(cacheKey) {
       const storageKey = PREFIX + cacheKey;
-      const result = await chrome.storage.local.get(storageKey);
+      const result = await LAI.safeStorage.get(storageKey);
       return result[storageKey] ?? null;
     },
 
     async set(cacheKey, value) {
-      await chrome.storage.local.set({ [PREFIX + cacheKey]: value });
+      await LAI.safeStorage.set({ [PREFIX + cacheKey]: value });
       _writeCount++;
       if (_writeCount % EVICT_EVERY === 0) {
         _evictIfNeeded().catch(() => { /* non-critical */ });
@@ -49,21 +49,21 @@
 
     // Returns the count of post:* entries only — not total extension storage.
     async size() {
-      const all = await chrome.storage.local.get(null);
+      const all = await LAI.safeStorage.get(null);
       return Object.keys(all).filter(k => k.startsWith(PREFIX)).length;
     },
 
     // Returns accumulated hit/miss counters persisted by content.js.
     async getStats() {
-      const result = await chrome.storage.local.get(STATS_KEY);
+      const result = await LAI.safeStorage.get(STATS_KEY);
       return result[STATS_KEY] ?? { hits: 0, misses: 0 };
     },
 
     // Removes all post:* entries. Intended for DevTools debugging only.
     async clear() {
-      const all = await chrome.storage.local.get(null);
+      const all = await LAI.safeStorage.get(null);
       const postKeys = Object.keys(all).filter(k => k.startsWith(PREFIX));
-      if (postKeys.length > 0) await chrome.storage.local.remove(postKeys);
+      if (postKeys.length > 0) await LAI.safeStorage.remove(postKeys);
     },
   };
 

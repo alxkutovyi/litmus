@@ -23,7 +23,7 @@
     async update(authorId, name, profileUrl, postId, label, score) {
       if (!authorId || !postId) return;
 
-      const result = await chrome.storage.local.get(STATS_KEY);
+      const result = await LAI.safeStorage.get(STATS_KEY);
       const stats  = result[STATS_KEY] ?? {};
 
       const now    = Date.now();
@@ -57,7 +57,7 @@
       record.lastSeen = now;
 
       stats[authorId] = record;
-      await chrome.storage.local.set({ [STATS_KEY]: stats });
+      await LAI.safeStorage.set({ [STATS_KEY]: stats });
 
       // Trigger AutoHidden recompute — guard because this file loads before auto-hidden.js.
       if (LAI.AutoHidden?.recompute) LAI.AutoHidden.recompute();

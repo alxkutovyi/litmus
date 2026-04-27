@@ -27,7 +27,7 @@
   async function recompute() {
     let data;
     try {
-      data = await chrome.storage.local.get([
+      data = await LAI.safeStorage.get([
         STATS_KEY, BLACKLIST_KEY, WHITELIST_KEY,
         MIN_POSTS_KEY, AI_THRESHOLD_KEY,
       ]);
@@ -83,6 +83,7 @@
 
   // Recompute whenever relevant storage keys change.
   chrome.storage.onChanged.addListener((changes, area) => {
+    try { if (!chrome.runtime?.id) return; } catch { return; }
     if (area !== 'local') return;
     const keys = [STATS_KEY, BLACKLIST_KEY, WHITELIST_KEY, MIN_POSTS_KEY, AI_THRESHOLD_KEY];
     if (keys.some(k => k in changes)) recompute();

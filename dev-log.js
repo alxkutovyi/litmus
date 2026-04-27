@@ -39,7 +39,7 @@
 
       let entries;
       try {
-        const result = await chrome.storage.local.get(STORAGE_KEY);
+        const result = await LAI.safeStorage.get(STORAGE_KEY);
         entries = result[STORAGE_KEY] ?? [];
       } catch {
         entries = [];
@@ -50,7 +50,7 @@
       if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
 
       try {
-        await chrome.storage.local.set({ [STORAGE_KEY]: entries });
+        await LAI.safeStorage.set({ [STORAGE_KEY]: entries });
       } catch (err) {
         console.warn(`${LAI.LOG_PREFIX} DevLog.logPost failed:`, err.message);
       }
@@ -59,7 +59,7 @@
     // Return all entries as a JSON string ready for download.
     async exportAsJSON() {
       try {
-        const result = await chrome.storage.local.get(STORAGE_KEY);
+        const result = await LAI.safeStorage.get(STORAGE_KEY);
         return JSON.stringify(result[STORAGE_KEY] ?? [], null, 2);
       } catch {
         return '[]';
@@ -69,7 +69,7 @@
     // Remove all log entries.
     async clearLog() {
       try {
-        await chrome.storage.local.remove(STORAGE_KEY);
+        await LAI.safeStorage.remove(STORAGE_KEY);
       } catch (err) {
         console.warn(`${LAI.LOG_PREFIX} DevLog.clearLog failed:`, err.message);
       }
@@ -78,7 +78,7 @@
     // How many entries are currently stored.
     async getLogSize() {
       try {
-        const result = await chrome.storage.local.get(STORAGE_KEY);
+        const result = await LAI.safeStorage.get(STORAGE_KEY);
         return (result[STORAGE_KEY] ?? []).length;
       } catch {
         return 0;

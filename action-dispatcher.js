@@ -13,6 +13,7 @@
   let _thresholds = null;
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    try { if (!chrome.runtime?.id) return; } catch { return; }
     if (area === 'local' && (MIN_POSTS_KEY in changes || AI_THRESHOLD_KEY in changes)) {
       _thresholds = null;
     }
@@ -20,7 +21,7 @@
 
   async function getThresholds() {
     if (_thresholds) return _thresholds;
-    const result = await chrome.storage.local.get([MIN_POSTS_KEY, AI_THRESHOLD_KEY]);
+    const result = await LAI.safeStorage.get([MIN_POSTS_KEY, AI_THRESHOLD_KEY]);
     _thresholds = {
       minPosts:    result[MIN_POSTS_KEY]     ?? LAI.DEFAULT_MIN_POSTS    ?? 5,
       aiThreshold: result[AI_THRESHOLD_KEY]  ?? LAI.DEFAULT_AI_THRESHOLD ?? 80,
@@ -39,7 +40,7 @@
 
       const { minPosts, aiThreshold } = await getThresholds();
 
-      const result = await chrome.storage.local.get(AUTHOR_STATS_KEY);
+      const result = await LAI.safeStorage.get(AUTHOR_STATS_KEY);
       const record = (result[AUTHOR_STATS_KEY] ?? {})[authorId];
       if (!record) return;
 

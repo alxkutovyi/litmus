@@ -100,7 +100,7 @@ let _skipRecommendedFor = false;
 // Batch-load all four flags at once. After loading, retroactively apply any
 // that are ON — this handles the race between the observer's initial DOM flush
 // and the async storage read completing.
-chrome.storage.local.get([
+LAI.safeStorage.get([
   _SKIP_PROMOTED_KEY, _SKIP_SUGGESTED_KEY, _SKIP_COMPANY_KEY, _SKIP_RECOMMENDED_KEY,
 ]).then(r => {
   _skipPromotedPosts  = !!r[_SKIP_PROMOTED_KEY];
@@ -115,21 +115,25 @@ chrome.storage.local.get([
 
 // Live updates when toggles change from the popup.
 chrome.storage.onChanged.addListener((changes, area) => {
+  try { if (!chrome.runtime?.id) return; } catch { return; }
   if (area !== 'local' || !(_SKIP_PROMOTED_KEY in changes)) return;
   _skipPromotedPosts = !!changes[_SKIP_PROMOTED_KEY].newValue;
   applyFilterRetroactively('promoted', _skipPromotedPosts);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  try { if (!chrome.runtime?.id) return; } catch { return; }
   if (area !== 'local' || !(_SKIP_SUGGESTED_KEY in changes)) return;
   _skipSuggestedPosts = !!changes[_SKIP_SUGGESTED_KEY].newValue;
   applyFilterRetroactively('suggested', _skipSuggestedPosts);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  try { if (!chrome.runtime?.id) return; } catch { return; }
   if (area !== 'local' || !(_SKIP_COMPANY_KEY in changes)) return;
   _skipCompanyPosts = !!changes[_SKIP_COMPANY_KEY].newValue;
   applyFilterRetroactively('company', _skipCompanyPosts);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  try { if (!chrome.runtime?.id) return; } catch { return; }
   if (area !== 'local' || !(_SKIP_RECOMMENDED_KEY in changes)) return;
   _skipRecommendedFor = !!changes[_SKIP_RECOMMENDED_KEY].newValue;
   applyFilterRetroactively('recommended', _skipRecommendedFor);
@@ -139,6 +143,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // When the blacklist changes (e.g. an author is unhidden from the stats page),
 // restore any of their posts that are currently visible in this tab.
 chrome.storage.onChanged.addListener((changes, area) => {
+  try { if (!chrome.runtime?.id) return; } catch { return; }
   if (area !== 'local' || !(_BLACKLIST_KEY in changes)) return;
   const newIds = new Set((changes[_BLACKLIST_KEY].newValue ?? []).map(e => e.authorId));
   const oldIds = new Set((changes[_BLACKLIST_KEY].oldValue ?? []).map(e => e.authorId));
@@ -267,7 +272,7 @@ window.LAI.startObserver(async postElement => {
 
   let result;
   try {
-    result = await chrome.runtime.sendMessage({ type: 'classify', text: extracted.text });
+    result = await LAI.safeSendMessage({ type: 'classify', text: extracted.text });
   } catch (err) {
     result = { error: 'network' };
     console.error(`${LOG_PREFIX} sendMessage failed: ${err.message}`);
@@ -327,7 +332,7 @@ window.LAI.startObserver(async postElement => {
     sessionCounts[detection.label] += 1;
   }
   try {
-    await chrome.storage.local.set({ [_SESSION_SCANNED_KEY]: sessionScanned });
+    await LAI.safeStorage.set({ [_SESSION_SCANNED_KEY]: sessionScanned });
   } catch { /* non-critical */ }
 
   console.log(`${LOG_PREFIX} detected:`, {
@@ -351,8 +356,8 @@ window.LAI.startObserver(async postElement => {
     console.log(`${LOG_PREFIX} Summary: ${sessionCounts.ai} ai, ${sessionCounts.human} human, ${sessionCounts.mixed} mixed, ${sessionCounts.uncertain} uncertain (${sessionScanned} total)  |  cache: ${sz}`);
     // Persist accumulated hit/miss counters to storage.
     try {
-      const stored = (await chrome.storage.local.get(_CACHE_STATS_KEY))[_CACHE_STATS_KEY] ?? { hits: 0, misses: 0 };
-      await chrome.storage.local.set({ [_CACHE_STATS_KEY]: {
+      const stored = (await LAI.safeStorage.get(_CACHE_STATS_KEY))[_CACHE_STATS_KEY] ?? { hits: 0, misses: 0 };
+      await LAI.safeStorage.set({ [_CACHE_STATS_KEY]: {
         hits:   stored.hits   + sessionHits,
         misses: stored.misses + sessionMisses,
       }});

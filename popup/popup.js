@@ -3,13 +3,11 @@
 const CACHE_PREFIX      = 'post:';
 const VERSION           = '0.2.0';
 const APIKEY_KEY        = 'litmus:gptzeroApiKey';
-const USAGE_KEY         = 'litmus:gptzeroUsage';
+const USAGE_STATS_KEY   = 'litmus:usageStats';
 const CACHE_STATS_KEY   = 'litmus:stats:cache';
 const AUTHOR_STATS_KEY  = 'litmus:authorStats';
 const DEVLOG_KEY        = 'litmus:devlog:entries';
 const DEV_MODE_KEY      = 'litmus:devMode';
-const LIFETIME_KEY      = 'litmus:gptzeroUsageLifetime';
-const MONTHLY_LIMIT_KEY = 'litmus:monthlyWordLimit';
 const MIN_POSTS_KEY      = 'litmus:minPosts';
 const AI_THRESHOLD_KEY   = 'litmus:aiThreshold';
 const SKIP_PROMOTED_KEY    = 'litmus:skipPromotedPosts';
@@ -17,9 +15,8 @@ const SKIP_SUGGESTED_KEY   = 'litmus:skipSuggestedPosts';
 const SKIP_COMPANIES_KEY   = 'litmus:skipCompanyPosts';
 const SKIP_RECOMMENDED_KEY = 'litmus:skipRecommendedFor';
 
-const DEFAULT_MONTHLY_LIMIT  = 10000;
-const DEFAULT_MIN_POSTS       = 5;
-const DEFAULT_AI_THRESHOLD    = 80;   // stored as integer percent (e.g. 80 = 80%)
+const DEFAULT_MIN_POSTS      = 5;
+const DEFAULT_AI_THRESHOLD   = 80;   // stored as integer percent (e.g. 80 = 80%)
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -34,11 +31,6 @@ function tsString() {
   const d = new Date(), pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
          `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-}
-
-function currentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function escHtml(s) {
@@ -111,32 +103,98 @@ function showKeySavedState(key) {
   document.getElementById('apikey-masked').textContent   = '••••••••' + key.slice(-4);
 }
 
-async function loadApiStatusSection() {
-  const result       = await chrome.storage.local.get([APIKEY_KEY, USAGE_KEY, CACHE_STATS_KEY, MONTHLY_LIMIT_KEY]);
-  const key          = result[APIKEY_KEY];
-  const stored       = result[USAGE_KEY];
-  const month        = currentMonth();
-  const words        = (stored?.month === month) ? (stored.wordsSent ?? 0) : 0;
-  const monthlyLimit = result[MONTHLY_LIMIT_KEY] ?? DEFAULT_MONTHLY_LIMIT;
-  const cs           = result[CACHE_STATS_KEY] ?? { hits: 0, misses: 0 };
-  const cacheTotal   = cs.hits + cs.misses;
-  const hitRate      = cacheTotal > 0 ? Math.round(cs.hits / cacheTotal * 100) : null;
-  const barPct       = Math.min(100, Math.round(words / monthlyLimit * 100));
+function _formatCycleDate(unixSeconds) {
+  return new Date(unixSeconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
-  const usageRight = document.getElementById('api-usage-right');
+function _hitRateText(cs) {
+  const total = (cs?.hits ?? 0) + (cs?.misses ?? 0);
+  return total > 0 ? `${Math.round(cs.hits / total * 100)}% cache hit` : null;
+}
 
-  if (key) {
-    showKeySavedState(key);
-    usageRight.textContent = `${words.toLocaleString()} / ${monthlyLimit.toLocaleString()}`;
-    usageRight.className   = 'api-usage-right';
-    document.getElementById('usage-bar').style.width = barPct + '%';
-    document.getElementById('usage-helper').textContent =
-      hitRate != null ? `${hitRate}% cache hit · resets monthly` : 'resets monthly';
-  } else {
-    showKeyNoState();
-    usageRight.textContent = 'API key required';
-    usageRight.className   = 'api-usage-right err';
+function renderUsageStats(stats, hitRate) {
+  const usageRight  = document.getElementById('api-usage-right');
+  const usageBar    = document.getElementById('usage-bar');
+  const barWrap     = document.getElementById('usage-bar-wrap');
+  const helper      = document.getElementById('usage-helper');
+  const hitText     = hitRate ?? null;
+
+  if (!stats || stats.error) {
+    if (barWrap) barWrap.style.display = 'none';
+    if (stats?.error === 'no-key') {
+      usageRight.textContent = 'API key required';
+      usageRight.style.color = '#C44545';
+      if (helper) helper.textContent = 'Set a key below to start classifying.';
+    } else {
+      usageRight.textContent = 'Usage unavailable';
+      usageRight.style.color = '#A1A1A6';
+      if (helper) helper.textContent =
+        'Could not reach GPTZero.' + (hitText ? ' · ' + hitText : '');
+    }
+    return;
   }
+
+  const { wordsLeft, wordsUsed, cycleEnd, plan } = stats;
+  usageRight.style.color = '#1D1D1F';
+
+  if (wordsLeft === null || wordsLeft === undefined) {
+    // Enterprise / metered — no fixed cap
+    if (barWrap) barWrap.style.display = 'none';
+    usageRight.textContent = `${(wordsUsed ?? 0).toLocaleString()} used`;
+    const planPart = plan ? `${plan} plan · metered billing` : 'Metered billing';
+    if (helper) helper.textContent = [planPart, hitText].filter(Boolean).join(' · ');
+  } else {
+    // Standard plan with a quota
+    if (barWrap) barWrap.style.display = '';
+    const total  = (wordsUsed ?? 0) + wordsLeft;
+    usageRight.textContent = `${(wordsUsed ?? 0).toLocaleString()} / ${total.toLocaleString()}`;
+    if (usageBar) usageBar.style.width = (total > 0 ? Math.min(100, Math.round((wordsUsed ?? 0) / total * 100)) : 0) + '%';
+
+    const now = Date.now() / 1000;
+    let cyclePart;
+    if (cycleEnd && cycleEnd < now) {
+      cyclePart = 'Cycle ended — renew at gptzero.me';
+    } else if (cycleEnd) {
+      cyclePart = `resets ${_formatCycleDate(cycleEnd)}`;
+    }
+    const planPart = plan ? `${plan} plan` : null;
+    if (helper) helper.textContent = [planPart, cyclePart, hitText].filter(Boolean).join(' · ');
+  }
+}
+
+async function loadApiStatusSection() {
+  const result  = await chrome.storage.local.get([APIKEY_KEY, USAGE_STATS_KEY, CACHE_STATS_KEY]);
+  const key     = result[APIKEY_KEY];
+  const cached  = result[USAGE_STATS_KEY];
+  const hitRate = _hitRateText(result[CACHE_STATS_KEY]);
+
+  if (!key) {
+    showKeyNoState();
+    renderUsageStats({ error: 'no-key' }, null);
+    return;
+  }
+
+  showKeySavedState(key);
+
+  // Render cached data immediately to avoid blank state.
+  if (cached) {
+    renderUsageStats(cached, hitRate);
+  } else {
+    document.getElementById('api-usage-right').textContent = '…';
+    document.getElementById('api-usage-right').style.color = '#A1A1A6';
+    const helper = document.getElementById('usage-helper');
+    if (helper) helper.textContent = '';
+  }
+
+  // Fetch fresh data; re-render on success, keep cached display on error.
+  chrome.runtime.sendMessage({ type: 'fetchUsageStats' }, resp => {
+    if (chrome.runtime.lastError) return;
+    if (resp && !resp.error) {
+      renderUsageStats(resp, hitRate);
+    } else if (!cached) {
+      renderUsageStats(resp ?? { error: 'network' }, hitRate);
+    }
+  });
 }
 
 async function validateAndSaveKey(key) {
@@ -156,18 +214,11 @@ async function validateAndSaveKey(key) {
   if (outcome === 'invalid') { setKeyStatus('✕ Invalid key', 'err'); return; }
 
   await chrome.storage.local.set({ [APIKEY_KEY]: key });
+  await loadApiStatusSection();
 
   if (outcome === 'valid') {
-    const r       = await chrome.storage.local.get(USAGE_KEY);
-    const s       = r[USAGE_KEY];
-    const mo      = currentMonth();
-    const current = (!s || s.month !== mo) ? { month: mo, wordsSent: 0 } : { ...s };
-    current.wordsSent += 1;
-    await chrome.storage.local.set({ [USAGE_KEY]: current });
-    await loadApiStatusSection();
     setKeyStatus('✓ Key valid', 'ok');
   } else {
-    await loadApiStatusSection();
     setKeyStatus("⚠ Couldn't validate — saved");
   }
 }
@@ -193,44 +244,13 @@ document.getElementById('btn-apikey-clear').addEventListener('click', async () =
   showKeyNoState(); setKeyStatus('');
 });
 
-// ── Number input digit filter (Change 7) ─────────────────────────────────────
+// ── Number input digit filter ─────────────────────────────────────────────────
 // Strips non-digit characters while typing; clamp happens on blur.
 function digitFilter(e) {
   const prev = e.target.value;
   const next = prev.replace(/\D/g, '');
   if (next !== prev) e.target.value = next;
 }
-
-// ── Settings — shared helpers ─────────────────────────────────────────────────
-
-function showSettingError(elId, msg) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  el.textContent = msg;
-  el.style.display = msg ? '' : 'none';
-}
-
-// ── Settings — monthly word limit ─────────────────────────────────────────────
-
-async function loadMonthlyLimit() {
-  const result = await chrome.storage.local.get(MONTHLY_LIMIT_KEY);
-  const val    = result[MONTHLY_LIMIT_KEY] ?? DEFAULT_MONTHLY_LIMIT;
-  document.getElementById('input-monthly-limit').value = val;
-}
-
-document.getElementById('input-monthly-limit').addEventListener('blur', async e => {
-  let raw = parseInt(e.target.value, 10);
-  const errId = 'monthly-limit-error';
-  if (isNaN(raw) || raw < 1000) {
-    raw = 1000; e.target.value = raw;
-  } else if (raw > 10_000_000) {
-    raw = 10_000_000; e.target.value = raw;
-  }
-  e.target.classList.remove('err');
-  showSettingError(errId, '');
-  await chrome.storage.local.set({ [MONTHLY_LIMIT_KEY]: raw });
-  await loadApiStatusSection();
-});
 
 // ── Settings — detection thresholds ──────────────────────────────────────────
 
@@ -361,13 +381,6 @@ document.getElementById('btn-reset-author-stats').addEventListener('click', asyn
   await loadDevTools();
 });
 
-document.getElementById('btn-reset-word-counter').addEventListener('click', async () => {
-  const ok = await showModal('Reset both monthly and lifetime word counts to zero?', 'Reset');
-  if (!ok) return;
-  await chrome.storage.local.remove([USAGE_KEY, LIFETIME_KEY]);
-  await loadApiStatusSection();
-});
-
 document.getElementById('btn-reset-everything').addEventListener('click', async () => {
   const ok = await showModal(
     'This will delete cache, author stats, dev log, and word counts. API key and settings will be kept. Continue?',
@@ -377,7 +390,7 @@ document.getElementById('btn-reset-everything').addEventListener('click', async 
   const all      = await chrome.storage.local.get(null);
   const preserve = new Set([
     APIKEY_KEY, DEV_MODE_KEY,
-    MONTHLY_LIMIT_KEY, MIN_POSTS_KEY, AI_THRESHOLD_KEY,
+    MIN_POSTS_KEY, AI_THRESHOLD_KEY,
     SKIP_PROMOTED_KEY, SKIP_SUGGESTED_KEY, SKIP_COMPANIES_KEY, SKIP_RECOMMENDED_KEY,
   ]);
   const toRemove = Object.keys(all).filter(k => !preserve.has(k));
@@ -396,14 +409,13 @@ document.getElementById('btn-open-stats').addEventListener('click', () => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 // Wire digit filters on all text-mode number inputs.
-['input-monthly-limit', 'input-min-posts', 'input-ai-threshold'].forEach(id => {
+['input-min-posts', 'input-ai-threshold'].forEach(id => {
   document.getElementById(id)?.addEventListener('input', digitFilter);
 });
 
 loadStats();
 loadApiStatusSection();
 loadDevMode();
-loadMonthlyLimit();
 loadThresholds();
 loadSkipPromoted();
 loadSkipSuggested();
