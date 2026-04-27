@@ -27,7 +27,7 @@ Per-author statistics, blacklists, whitelists, the cache of previously classifie
 
 ## What data is sent to third parties
 
-Litmus sends **post text only** to the GPTZero API (`api.gptzero.me`) for classification. This is your own GPTZero account, accessed using the API key you provide. GPTZero's privacy policy applies to data sent there: https://gptzero.me/privacy
+Litmus sends **post text only** to the GPTZero API (`api.gptzero.me`) for classification. This is your own GPTZero account, accessed using the API key you provide. GPTZero's privacy policy applies to data sent there: https://gptzero.me/privacy-policy.html
 
 No other third parties receive any data from Litmus. There is no analytics, telemetry, advertising, or tracking.
 
