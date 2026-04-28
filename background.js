@@ -164,6 +164,63 @@ async function runMigrations() {
     console.log('[Litmus] Migration 6: renamed storage keys with litmus: prefix.');
     version = 6;
   }
+
+  // ── Migration 7: clear dev log (old entries stored full post text) ────────
+  // Dev log format changed: text and reasons fields removed to prevent storage
+  // quota exhaustion. Wipe existing entries so no old bloated entries remain.
+  if (version < 7) {
+    await chrome.storage.local.remove('litmus:devlog:entries');
+    await chrome.storage.local.set({ 'litmus:migrationVersion': 7 });
+    console.log('[Litmus] Migration 7: cleared dev log (old format with text bodies).');
+    version = 7;
+  }
+
+  // ── Migration 8: dev log — single-array → per-entry keys ─────────────────
+  // Old: 'litmus:devlog:entries' → [ entry, ... ]
+  // New: 'litmus:devlog:<ts>'   → entry  (one key per entry)
+  // Per-entry keys allow O(1) writes and make per-entry eviction trivial.
+  if (version < 8) {
+    const data    = await chrome.storage.local.get('litmus:devlog:entries');
+    const entries = data['litmus:devlog:entries'];
+    if (Array.isArray(entries) && entries.length > 0) {
+      const writes = {};
+      const seen   = new Set();
+      for (const entry of entries) {
+        let ts = entry.ts ?? Date.now();
+        // Guard against duplicate timestamps.
+        while (seen.has(ts)) ts++;
+        seen.add(ts);
+        writes[`litmus:devlog:${ts}`] = { ...entry, ts };
+      }
+      await chrome.storage.local.set(writes);
+    }
+    await chrome.storage.local.remove('litmus:devlog:entries');
+    await chrome.storage.local.set({ 'litmus:migrationVersion': 8 });
+    console.log(`[Litmus] Migration 8: dev log migrated to per-entry keys (${Array.isArray(entries) ? entries.length : 0} entries).`);
+    version = 8;
+  }
+
+  // ── Migration 9: author stats — single-object → per-author keys ──────────
+  // Old: 'litmus:authorStats'          → { [authorId]: record, ... }
+  // New: 'litmus:authorStats:<authorId>' → record
+  // Per-author keys allow O(1) writes and enable author-level eviction.
+  if (version < 9) {
+    const data  = await chrome.storage.local.get('litmus:authorStats');
+    const stats = data['litmus:authorStats'];
+    let migratedCount = 0;
+    if (stats && typeof stats === 'object' && !Array.isArray(stats)) {
+      const writes = {};
+      for (const [authorId, record] of Object.entries(stats)) {
+        writes[`litmus:authorStats:${authorId}`] = record;
+        migratedCount++;
+      }
+      if (Object.keys(writes).length) await chrome.storage.local.set(writes);
+    }
+    await chrome.storage.local.remove('litmus:authorStats');
+    await chrome.storage.local.set({ 'litmus:migrationVersion': 9 });
+    console.log(`[Litmus] Migration 9: author stats migrated to per-author keys (${migratedCount} authors).`);
+    version = 9;
+  }
 }
 
 runMigrations().catch(err => console.error('[Litmus] Migration failed:', err));
@@ -301,7 +358,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-// ── Dev utility ───────────────────────────────────────────────────────────────
+// ── Dev log diagnostic ────────────────────────────────────────────────────────
+// Run from the service worker DevTools console to inspect the current dev log.
+//
+//   Usage: await LAI_devLogStatus()
+//
+// Prints: entry count, entries with text, label distribution, date range,
+// average word count, and the first entry as a sample.
+
+self.LAI_devLogStatus = async function () {
+  const DEVLOG_PREFIX = 'litmus:devlog:';
+  const all     = await chrome.storage.local.get(null);
+  const entries = Object.entries(all)
+    .filter(([k, v]) => k.startsWith(DEVLOG_PREFIX) && typeof v?.ts === 'number')
+    .map(([, v]) => v)
+    .sort((a, b) => b.ts - a.ts);
+
+  if (entries.length === 0) {
+    console.log('[Litmus devLogStatus] Dev log is empty.');
+    return;
+  }
+
+  const withText  = entries.filter(e => e.text && e.text.trim().length > 0).length;
+  const labelDist = { ai: 0, mixed: 0, human: 0, other: 0 };
+  let totalWords  = 0;
+  for (const e of entries) {
+    if (e.label === 'ai')         labelDist.ai++;
+    else if (e.label === 'mixed') labelDist.mixed++;
+    else if (e.label === 'human') labelDist.human++;
+    else                          labelDist.other++;
+    if (e.wordCount) totalWords += e.wordCount;
+  }
+  const avgWords = entries.length > 0 ? Math.round(totalWords / entries.length) : 0;
+
+  const timestamps = entries.map(e => e.ts).filter(Boolean);
+  const oldest = timestamps.length ? new Date(Math.min(...timestamps)).toISOString() : 'N/A';
+  const newest = timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : 'N/A';
+
+  console.log(`[Litmus devLogStatus]
+  Entries:    ${entries.length} (${withText} have text)
+  Labels:     AI=${labelDist.ai}, Mixed=${labelDist.mixed}, Human=${labelDist.human}${labelDist.other ? ', Other=' + labelDist.other : ''}
+  Date range: ${oldest} → ${newest}
+  Avg words:  ${avgWords}
+  Sample (newest entry):`);
+  console.log(entries[0]);
+};
+
+// ── Structure test ────────────────────────────────────────────────────────────
 // Run from the service worker DevTools console to test whether GPTZero scores
 // differ between structured text (with \n\n paragraph breaks) and a flattened
 // version (all newlines replaced with spaces).
@@ -330,5 +433,121 @@ self.LAI_structureTest = async function (text) {
   if (!r1.error && !r2.error) {
     const delta = Math.abs(r1.score - r2.score);
     console.log(`[LAI structureTest] score delta: ${(delta * 100).toFixed(1)}pp — structure is ${delta < 0.01 ? 'NOT used' : 'BEING USED'} by GPTZero`);
+  }
+};
+
+// ── Storage health watchdog ───────────────────────────────────────────────────
+// Runs on service-worker startup and every 30 minutes.
+// Logs storage usage and proactively evicts post:* cache entries if total
+// storage exceeds 8 MB (the same threshold used in cache.js).
+
+const WATCHDOG_THRESHOLD_BYTES = 8 * 1024 * 1024; // 8 MB
+
+// Evicts the oldest 30% of post:* cache entries.
+// Mirrors the emergency-eviction logic in cache.js, used from background
+// context where LAI.Cache is not available.
+async function _backgroundEvictCache() {
+  const all = await chrome.storage.local.get(null);
+  const postPairs = Object.entries(all)
+    .filter(([k]) => k.startsWith('post:'))
+    .sort(([, a], [, b]) => (a?.cachedAt ?? 0) - (b?.cachedAt ?? 0));
+  if (!postPairs.length) return 0;
+  const evictCount = Math.max(1, Math.ceil(postPairs.length * 0.30));
+  const toDelete   = postPairs.slice(0, evictCount).map(([k]) => k);
+  await chrome.storage.local.remove(toDelete);
+  return toDelete.length;
+}
+
+async function storageHealthCheck() {
+  let totalBytes;
+  try {
+    totalBytes = await chrome.storage.local.getBytesInUse(null);
+  } catch {
+    return; // getBytesInUse unavailable (unlikely but guard it)
+  }
+
+  const totalKB = Math.round(totalBytes / 1024);
+  const limitKB = Math.round(WATCHDOG_THRESHOLD_BYTES / 1024);
+
+  const all = await chrome.storage.local.get(null);
+  const prefixCounts = {
+    'post:':                 0,
+    'litmus:devlog:':        0,
+    'litmus:authorStats:':   0,
+    'litmus:blacklist':      0,
+    'litmus:whitelist':      0,
+    'other':                 0,
+  };
+  for (const key of Object.keys(all)) {
+    let matched = false;
+    for (const prefix of Object.keys(prefixCounts).filter(p => p !== 'other')) {
+      if (key.startsWith(prefix)) { prefixCounts[prefix]++; matched = true; break; }
+    }
+    if (!matched) prefixCounts['other']++;
+  }
+
+  console.log(`[Litmus] Storage health: ${totalKB}KB / ${limitKB}KB threshold`, prefixCounts);
+
+  if (totalBytes > WATCHDOG_THRESHOLD_BYTES) {
+    console.warn(`[Litmus] Storage exceeds ${limitKB}KB — triggering proactive cache eviction`);
+    try {
+      const evicted = await _backgroundEvictCache();
+      console.warn(`[Litmus] Watchdog evicted ${evicted} post:* cache entries`);
+    } catch (err) {
+      console.warn('[Litmus] Watchdog eviction failed:', err);
+    }
+  }
+}
+
+// Run on startup, then every 30 minutes.
+storageHealthCheck().catch(() => {});
+setInterval(() => storageHealthCheck().catch(() => {}), 30 * 60 * 1000);
+
+// ── Storage report ────────────────────────────────────────────────────────────
+// Run from the service worker DevTools console to inspect storage usage.
+//
+//   Usage: await LAI_storageReport()
+//
+// Prints total bytes used, per-prefix entry counts, and the 5 largest keys.
+
+self.LAI_storageReport = async function () {
+  const totalBytes = await chrome.storage.local.getBytesInUse(null);
+  const all        = await chrome.storage.local.get(null);
+
+  const groups = {
+    'post:':               [],
+    'litmus:devlog:':      [],
+    'litmus:authorStats:': [],
+    'litmus:blacklist':    [],
+    'litmus:whitelist':    [],
+    'litmus: (other)':     [],
+    'other':               [],
+  };
+
+  for (const key of Object.keys(all)) {
+    if      (key.startsWith('post:'))               groups['post:'].push(key);
+    else if (key.startsWith('litmus:devlog:'))       groups['litmus:devlog:'].push(key);
+    else if (key.startsWith('litmus:authorStats:'))  groups['litmus:authorStats:'].push(key);
+    else if (key.startsWith('litmus:blacklist'))     groups['litmus:blacklist'].push(key);
+    else if (key.startsWith('litmus:whitelist'))     groups['litmus:whitelist'].push(key);
+    else if (key.startsWith('litmus:'))              groups['litmus: (other)'].push(key);
+    else                                             groups['other'].push(key);
+  }
+
+  // Estimate individual key sizes via JSON serialisation length.
+  const enc      = new TextEncoder();
+  const keySizes = Object.entries(all).map(([k, v]) => ({
+    key:   k,
+    bytes: enc.encode(k).length + enc.encode(JSON.stringify(v)).length,
+  })).sort((a, b) => b.bytes - a.bytes);
+
+  const totalKB = Math.round(totalBytes / 1024);
+  console.log(`[Litmus] Storage Report — ${totalKB}KB total (~10240KB Chrome default limit)`);
+  console.table(Object.fromEntries(
+    Object.entries(groups).map(([prefix, keys]) => [prefix, keys.length])
+  ));
+  console.log('Top 5 largest keys (estimated):');
+  for (const { key, bytes } of keySizes.slice(0, 5)) {
+    console.log(`  ${String(Math.round(bytes / 1024)).padStart(4)}KB  ${key}`);
   }
 };

@@ -25,8 +25,12 @@ const _authorPostMap = new Map();
 window.LAI._authorPostMap = _authorPostMap;
 
 // ── AutoHidden: unhide visible posts when an author drops out of the set ──────
+// Skip authors that are now manually blacklisted — they remain hidden via that
+// mechanism. (recompute() is async so blacklist.js has already updated _cache
+// by the time this callback fires.)
 window.LAI.AutoHidden.onRemoved(removedIds => {
   for (const id of removedIds) {
+    if (window.LAI.Blacklist.has(id)) continue; // still hidden via blacklist
     const elements = _authorPostMap.get(id);
     if (!elements) continue;
     for (const el of elements) {
@@ -241,16 +245,15 @@ window.LAI.startObserver(async postElement => {
       const label = det.label ?? 'uncertain';
       console.log(`${LOG_PREFIX} cache hit: ${key} (${label})`);
       sessionHits++;
-      // Backfill author stats from cached extraction data.
-      // update() is idempotent (dedupes by postId), so repeated scroll-past
-      // of the same post is a safe no-op after the first recording.
-      const ex = existingEntry.extracted;
+      // Use freshly-extracted author data (available in scope) — cache entries
+      // no longer store the extracted object to keep storage bounded.
+      // Prefer fresh data; fall back to whatever the old cache entry may have.
+      const ex = extracted.authorId ? extracted : existingEntry.extracted;
       if (ex?.authorId) {
-        // Normalize: old cache entries may have un-namespaced slugs (pre-migration).
         const exId = ex.authorId.includes(':') ? ex.authorId : `person:${ex.authorId}`;
         window.LAI.AuthorStats.update(
-          exId, ex.author, ex.authorProfileUrl, key, label, det?.score ?? null,
-        ).then(() => window.LAI.ActionDispatcher.maybeHide(exId, ex.author, ex.authorProfileUrl))
+          exId, ex.author, ex.authorProfileUrl ?? ex.profileUrl, key, label, det?.score ?? null,
+        ).then(() => window.LAI.ActionDispatcher.maybeHide(exId, ex.author, ex.authorProfileUrl ?? ex.profileUrl))
          .catch(() => { /* non-critical */ });
       }
       window.LAI.injectBadge(postElement, label, det);
@@ -277,9 +280,11 @@ window.LAI.startObserver(async postElement => {
     result = { error: 'network' };
     console.error(`${LOG_PREFIX} sendMessage failed: ${err.message}`);
   }
-  console.log(`${LOG_PREFIX} background response:`, result);
-
   if (result.error) {
+    // context-invalid: extension was reloaded while the tab is still open.
+    // Nothing can be done — bail silently so the badge stays as 'pending'.
+    if (result.error === 'context-invalid') return;
+
     const errorLabel = {
       'no-key':     'no-key',
       'auth':       'error-auth',
@@ -287,17 +292,21 @@ window.LAI.startObserver(async postElement => {
       'network':    'error',
     }[result.error] ?? 'error';
     window.LAI.updateBadge(postElement, errorLabel);
-    console.warn(`${LOG_PREFIX} classify error: ${result.error} (${key})`);
+
+    // Transient errors (network) are debug-level; actionable ones stay as warn.
+    const log = (result.error === 'network') ? console.debug : console.warn;
+    log(`${LOG_PREFIX} classify error: ${result.error} (${key})`);
     return; // Do not cache error states — allow retry on next scroll-past.
   }
 
   const detection = result;
 
   // ── Cache write ──────────────────────────────────────────────────────────
-  // Preserve user-supplied labels when replacing a stale entry.
+  // Only store the classification result — not the extracted text. The cacheKey
+  // is a hash of the text so the text never needs to round-trip through storage.
+  // Author data for cache hits comes from fresh extraction (always in scope).
   console.log(`${LOG_PREFIX} cache write: ${key} engine=${detection.engine} label=${detection.label}`);
   await window.LAI.Cache.set(key, {
-    extracted,
     detected: detection,
     cachedAt: Date.now(),
   });

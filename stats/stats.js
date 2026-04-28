@@ -1,7 +1,7 @@
 // Stats page script.
 // Single unified table with VIEW filter (All / Visible / Auto-hidden / Blacklisted / Whitelisted).
 
-const AUTHOR_STATS_KEY    = 'litmus:authorStats';
+const AUTHOR_STATS_PREFIX = 'litmus:authorStats:';
 const BLACKLIST_KEY       = 'litmus:blacklist';
 const WHITELIST_KEY       = 'litmus:whitelist';
 const USAGE_KEY           = 'litmus:gptzeroUsage';
@@ -236,33 +236,46 @@ function buildStatusToggle(row) {
 }
 
 async function setAuthorStatus(authorId, newState, row) {
-  const result    = await chrome.storage.local.get([BLACKLIST_KEY, WHITELIST_KEY]);
-  let blacklist   = result[BLACKLIST_KEY] ?? [];
-  let whitelist   = result[WHITELIST_KEY] ?? [];
+  try {
+    const result    = await chrome.storage.local.get([BLACKLIST_KEY, WHITELIST_KEY]);
+    let blacklist   = result[BLACKLIST_KEY] ?? [];
+    let whitelist   = result[WHITELIST_KEY] ?? [];
 
-  blacklist = blacklist.filter(e => e.authorId !== authorId);
-  whitelist = whitelist.filter(e => e.authorId !== authorId);
+    blacklist = blacklist.filter(e => e.authorId !== authorId);
+    whitelist = whitelist.filter(e => e.authorId !== authorId);
 
-  if (newState === 'hide') {
-    blacklist.push({
-      authorId,
-      name:         row.name,
-      profileUrl:   row.profileUrl,
-      hiddenAt:     Date.now(),
-      aiRateAtHide: row.total > 0 ? row.ai / row.total : null,
-      postsAtHide:  { ai: row.ai, total: row.total },
-    });
-  } else if (newState === 'whitelist') {
-    whitelist.push({
-      authorId,
-      name:          row.name,
-      profileUrl:    row.profileUrl,
-      whitelistedAt: Date.now(),
-    });
+    if (newState === 'hide') {
+      blacklist.push({
+        authorId,
+        name:         row.name,
+        profileUrl:   row.profileUrl,
+        hiddenAt:     Date.now(),
+        aiRateAtHide: row.total > 0 ? row.ai / row.total : null,
+        postsAtHide:  { ai: row.ai, total: row.total },
+      });
+    } else if (newState === 'whitelist') {
+      whitelist.push({
+        authorId,
+        name:          row.name,
+        profileUrl:    row.profileUrl,
+        whitelistedAt: Date.now(),
+      });
+    }
+
+    try {
+      await chrome.storage.local.set({ [BLACKLIST_KEY]: blacklist, [WHITELIST_KEY]: whitelist });
+    } catch (writeErr) {
+      if (/quota|QUOTA_BYTES/i.test(writeErr.message)) {
+        console.warn('[Litmus] setAuthorStatus: quota error — blacklist write dropped');
+        return; // silently drop; blacklist is small so this should not happen in practice
+      }
+      throw writeErr;
+    }
+    await loadAll();
+  } catch (err) {
+    console.error('[Litmus] setAuthorStatus failed:', err);
+    alert(`Could not update status: ${err.message}`);
   }
-
-  await chrome.storage.local.set({ [BLACKLIST_KEY]: blacklist, [WHITELIST_KEY]: whitelist });
-  await loadAll();
 }
 
 // ── Author cell ───────────────────────────────────────────────────────────────
@@ -551,7 +564,13 @@ async function loadAll() {
   savedMinPosts = result[MIN_POSTS_KEY]    ?? DEFAULT_MIN_POSTS;
   savedAiPct    = result[AI_THRESHOLD_KEY] ?? DEFAULT_AI_THRESHOLD;
 
-  const authorStats = result[AUTHOR_STATS_KEY] ?? {};
+  // Author stats are stored as per-key entries; collect them by prefix.
+  const authorStats = {};
+  for (const [k, v] of Object.entries(result)) {
+    if (k.startsWith(AUTHOR_STATS_PREFIX) && v?.authorId) {
+      authorStats[v.authorId] = v;
+    }
+  }
   const blacklist   = result[BLACKLIST_KEY]     ?? [];
   const whitelist   = result[WHITELIST_KEY]     ?? [];
   const usageMonth  = result[USAGE_KEY];
@@ -627,9 +646,11 @@ let   pendingReset = null;
 document.getElementById('btn-reset-stats').addEventListener('click', () => {
   modalMsg.textContent = 'This will permanently delete all author statistics and cached classifications. This cannot be undone.';
   pendingReset = async () => {
-    const res      = await chrome.storage.local.get(null);
-    const postKeys = Object.keys(res).filter(k => k.startsWith(CACHE_PREFIX));
-    await chrome.storage.local.remove([AUTHOR_STATS_KEY, ...postKeys]);
+    const res         = await chrome.storage.local.get(null);
+    const keysToRemove = Object.keys(res).filter(
+      k => k.startsWith(CACHE_PREFIX) || k.startsWith(AUTHOR_STATS_PREFIX)
+    );
+    await chrome.storage.local.remove(keysToRemove);
     location.reload();
   };
   overlay.classList.add('visible');

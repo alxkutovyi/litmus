@@ -5,9 +5,9 @@
 // already-rendered posts in this tab.
 (function (LAI) {
 
-  const MIN_POSTS_KEY    = 'litmus:minPosts';
-  const AI_THRESHOLD_KEY = 'litmus:aiThreshold';
-  const AUTHOR_STATS_KEY = 'litmus:authorStats';
+  const MIN_POSTS_KEY       = 'litmus:minPosts';
+  const AI_THRESHOLD_KEY    = 'litmus:aiThreshold';
+  const AUTHOR_STATS_PREFIX = 'litmus:authorStats:';
 
   // Threshold cache — invalidated whenever the settings keys change.
   let _thresholds = null;
@@ -40,8 +40,9 @@
 
       const { minPosts, aiThreshold } = await getThresholds();
 
-      const result = await LAI.safeStorage.get(AUTHOR_STATS_KEY);
-      const record = (result[AUTHOR_STATS_KEY] ?? {})[authorId];
+      const storageKey = AUTHOR_STATS_PREFIX + authorId;
+      const result     = await LAI.safeStorage.get(storageKey);
+      const record     = result[storageKey];
       if (!record) return;
 
       const posts   = record.posts ?? [];

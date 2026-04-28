@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Litmus",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Flags AI-generated posts in the LinkedIn feed",
 
   "background": { "service_worker": "background.js" },
 
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "unlimitedStorage"],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://api.gptzero.me/*"

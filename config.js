@@ -5,7 +5,7 @@
 // scripts is inconsistent across versions. The global namespace is simpler
 // and fully reliable. See manifest.json for load order.
 (function (LAI) {
-  LAI.VERSION    = '0.2.1';
+  LAI.VERSION    = '0.2.3';
   LAI.DEV_MODE   = true;
   LAI.LOG_PREFIX = '[Litmus]';
 
@@ -45,6 +45,18 @@
         await chrome.storage.local.set(items);
       } catch (err) {
         if (/context invalidated/i.test(err.message)) return;
+        if (/quota/i.test(err.message)) {
+          // Storage full — evict cache entries and retry once.
+          if (LAI.Cache?._emergencyEvict) {
+            try { await LAI.Cache._emergencyEvict(); } catch { /* best-effort */ }
+          }
+          try {
+            await chrome.storage.local.set(items);
+          } catch (retryErr) {
+            console.warn(`${LAI.LOG_PREFIX} safeStorage.set: quota retry failed, dropping write`);
+          }
+          return;
+        }
         throw err;
       }
     },

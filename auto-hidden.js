@@ -6,12 +6,15 @@
 //   • post count >= minPosts
 //   • AI% >= aiThreshold
 //
+// Author stats are now stored as per-key entries ('litmus:authorStats:<authorId>'),
+// so recompute() reads all storage and filters by prefix.
+//
 // Loaded AFTER author-stats.js (per manifest order) so AuthorStats.update()
 // can call LAI.AutoHidden.recompute() immediately after a storage write.
 
 (function (LAI) {
 
-  const STATS_KEY        = 'litmus:authorStats';
+  const STATS_PREFIX     = 'litmus:authorStats:';
   const BLACKLIST_KEY    = 'litmus:blacklist';
   const WHITELIST_KEY    = 'litmus:whitelist';
   const MIN_POSTS_KEY    = 'litmus:minPosts';
@@ -27,13 +30,17 @@
   async function recompute() {
     let data;
     try {
-      data = await LAI.safeStorage.get([
-        STATS_KEY, BLACKLIST_KEY, WHITELIST_KEY,
-        MIN_POSTS_KEY, AI_THRESHOLD_KEY,
-      ]);
+      data = await LAI.safeStorage.get(null);
     } catch { return; }
 
-    const stats       = data[STATS_KEY]       ?? {};
+    // Collect all per-author records from the storage snapshot.
+    const stats = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (k.startsWith(STATS_PREFIX) && v?.authorId) {
+        stats[v.authorId] = v;
+      }
+    }
+
     const blacklist   = data[BLACKLIST_KEY]   ?? [];
     const whitelist   = data[WHITELIST_KEY]   ?? [];
     const minPosts    = data[MIN_POSTS_KEY]    ?? DEFAULT_MIN_POSTS;
@@ -81,12 +88,15 @@
     }
   }
 
-  // Recompute whenever relevant storage keys change.
+  // Recompute whenever any author-stats key, blacklist, whitelist, or threshold changes.
   chrome.storage.onChanged.addListener((changes, area) => {
     try { if (!chrome.runtime?.id) return; } catch { return; }
     if (area !== 'local') return;
-    const keys = [STATS_KEY, BLACKLIST_KEY, WHITELIST_KEY, MIN_POSTS_KEY, AI_THRESHOLD_KEY];
-    if (keys.some(k => k in changes)) recompute();
+    const staticKeys = [BLACKLIST_KEY, WHITELIST_KEY, MIN_POSTS_KEY, AI_THRESHOLD_KEY];
+    const hasRelevantChange =
+      staticKeys.some(k => k in changes) ||
+      Object.keys(changes).some(k => k.startsWith(STATS_PREFIX));
+    if (hasRelevantChange) recompute();
   });
 
   recompute(); // initial load
@@ -95,7 +105,7 @@
 
   LAI.AutoHidden = {
 
-    // Synchronous — safe on the hot post-processing path.
+    // Synchronous — safe to call from the hot post-processing path.
     has(authorId) { return _hiddenSet.has(authorId); },
 
     // Returns a snapshot of the current auto-hidden list.

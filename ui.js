@@ -214,15 +214,14 @@
 
     postElement.dataset.laiHidden = authorId;
 
-    // Suppress the pill (keep it in DOM so it can be restored on unhide).
-    const pill = postElement.querySelector('[data-lai-pill]');
-    if (pill) pill.style.display = 'none';
-
-    // Collapse the post body. Using display:none keeps the outer wrapper's
-    // height from collapsing entirely, which avoids upsetting LinkedIn's
-    // virtual-scroll position tracking.
-    const bodyEl = postElement.querySelector('[data-testid="expandable-text-box"]');
-    if (bodyEl) bodyEl.style.display = 'none';
+    // Hide all direct children — covers plain text, reshares with/without
+    // commentary, image-only, video, document, and poll post types.
+    // Hiding at child level (not the post element itself) keeps the outer
+    // wrapper in layout so LinkedIn's virtual-scroll position tracking stays intact.
+    // The placeholder is appended after this loop, so it is unaffected.
+    for (const child of postElement.children) {
+      child.style.display = 'none';
+    }
 
     // Inject placeholder.
     const ph = document.createElement('div');
@@ -256,15 +255,15 @@
     if (postElement.dataset.laiHidden !== authorId) return;
     delete postElement.dataset.laiHidden;
 
-    const bodyEl = postElement.querySelector('[data-testid="expandable-text-box"]');
-    if (bodyEl) bodyEl.style.display = '';
-
+    // Remove placeholder first so it isn't caught by the restore loop.
     postElement.querySelectorAll('.lai-post-placeholder').forEach(el => {
       if (el.dataset.laiPlaceholder === authorId) el.remove();
     });
 
-    const pill = postElement.querySelector('[data-lai-pill]');
-    if (pill) pill.style.display = '';
+    // Restore all direct children (placeholder already removed above).
+    for (const child of postElement.children) {
+      child.style.display = '';
+    }
   };
 
   // Hides all currently-rendered posts from a given author.

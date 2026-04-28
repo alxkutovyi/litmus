@@ -1,12 +1,12 @@
 // Popup script.
 
 const CACHE_PREFIX      = 'post:';
-const VERSION           = '0.2.0';
+const VERSION           = '0.2.3';
 const APIKEY_KEY        = 'litmus:gptzeroApiKey';
 const USAGE_STATS_KEY   = 'litmus:usageStats';
 const CACHE_STATS_KEY   = 'litmus:stats:cache';
-const AUTHOR_STATS_KEY  = 'litmus:authorStats';
-const DEVLOG_KEY        = 'litmus:devlog:entries';
+const AUTHOR_STATS_PREFIX = 'litmus:authorStats:';
+const DEVLOG_PREFIX       = 'litmus:devlog:';
 const DEV_MODE_KEY      = 'litmus:devMode';
 const MIN_POSTS_KEY      = 'litmus:minPosts';
 const AI_THRESHOLD_KEY   = 'litmus:aiThreshold';
@@ -291,13 +291,14 @@ async function loadDevMode() {
 }
 
 async function loadDevTools() {
-  const result    = await chrome.storage.local.get(null);
-  const entries   = result[DEVLOG_KEY] ?? [];
-  const cacheSize = Object.keys(result).filter(k => k.startsWith(CACHE_PREFIX)).length;
-  const cs        = result[CACHE_STATS_KEY] ?? { hits: 0, misses: 0 };
-  const total     = cs.hits + cs.misses;
-  const hitRate   = total > 0 ? Math.round(cs.hits / total * 100) : null;
-  document.getElementById('devlog-count').textContent      = entries.length;
+  const result      = await chrome.storage.local.get(null);
+  const devlogCount = Object.entries(result)
+    .filter(([k, v]) => k.startsWith(DEVLOG_PREFIX) && typeof v?.ts === 'number').length;
+  const cacheSize   = Object.keys(result).filter(k => k.startsWith(CACHE_PREFIX)).length;
+  const cs          = result[CACHE_STATS_KEY] ?? { hits: 0, misses: 0 };
+  const total       = cs.hits + cs.misses;
+  const hitRate     = total > 0 ? Math.round(cs.hits / total * 100) : null;
+  document.getElementById('devlog-count').textContent      = devlogCount;
   document.getElementById('cache-stats-line').textContent  = hitRate != null
     ? `Cache: ${cacheSize.toLocaleString()} entries · ${hitRate}% hit rate`
     : `Cache: ${cacheSize.toLocaleString()} entries`;
@@ -347,15 +348,21 @@ document.getElementById('toggle-skip-recommended').addEventListener('change', as
 });
 
 document.getElementById('btn-export-devlog').addEventListener('click', async () => {
-  const result = await chrome.storage.local.get(DEVLOG_KEY);
-  const json   = JSON.stringify(result[DEVLOG_KEY] ?? [], null, 2);
+  const result  = await chrome.storage.local.get(null);
+  const entries = Object.entries(result)
+    .filter(([k, v]) => k.startsWith(DEVLOG_PREFIX) && typeof v?.ts === 'number')
+    .map(([, v]) => v)
+    .sort((a, b) => b.ts - a.ts);
+  const json = JSON.stringify(entries, null, 2);
   downloadBlob(new Blob([json], { type: 'application/json' }), `lai-devlog-${tsString()}.json`);
 });
 
 document.getElementById('btn-clear-log').addEventListener('click', async () => {
   const ok = await showModal('Clear the dev log? This cannot be undone.', 'Clear');
   if (!ok) return;
-  await chrome.storage.local.remove(DEVLOG_KEY);
+  const all  = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter(k => k.startsWith(DEVLOG_PREFIX));
+  if (keys.length) await chrome.storage.local.remove(keys);
   document.getElementById('devlog-count').textContent = '0';
 });
 
@@ -377,7 +384,9 @@ document.getElementById('btn-reset-author-stats').addEventListener('click', asyn
     'Reset'
   );
   if (!ok) return;
-  await chrome.storage.local.remove(AUTHOR_STATS_KEY);
+  const all  = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter(k => k.startsWith(AUTHOR_STATS_PREFIX));
+  if (keys.length) await chrome.storage.local.remove(keys);
   await loadDevTools();
 });
 
