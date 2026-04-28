@@ -12,6 +12,8 @@ const TABLE_MIN_POSTS_KEY = 'litmus:tableMinPostsFilter';
 
 const DEFAULT_MIN_POSTS    = 5;
 const DEFAULT_AI_THRESHOLD = 80;
+// Must stay in sync with MAX_POSTS_PER_AUTHOR in author-stats.js.
+const MAX_MIN_POSTS        = 20;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -443,7 +445,7 @@ function updateThresholdPreview() {
   const minP = parseInt(minPostsEl.value, 10);
   const minA = parseInt(minAiEl.value, 10);
 
-  const validP = !isNaN(minP) && minP >= 1;
+  const validP = !isNaN(minP) && minP >= 1 && minP <= MAX_MIN_POSTS;
   const validA = !isNaN(minA) && minA >= 1 && minA <= 100;
 
   minPostsEl.classList.toggle('invalid', !validP);
@@ -500,7 +502,8 @@ function setupThresholdListeners() {
 
   minPostsEl.addEventListener('blur', () => {
     const v = parseInt(minPostsEl.value, 10);
-    if (isNaN(v) || v < 1) minPostsEl.value = 1;
+    if (isNaN(v) || v < 1)   minPostsEl.value = 1;
+    else if (v > MAX_MIN_POSTS) minPostsEl.value = MAX_MIN_POSTS;
     updateThresholdPreview();
   });
   minAiEl.addEventListener('blur', () => {
@@ -519,9 +522,10 @@ function setupThresholdListeners() {
   });
 
   document.getElementById('threshold-apply').addEventListener('click', async () => {
-    const minP = parseInt(minPostsEl.value, 10);
+    let minP = parseInt(minPostsEl.value, 10);
     const minA = parseInt(minAiEl.value, 10);
     if (isNaN(minP) || isNaN(minA)) return;
+    minP = Math.min(minP, MAX_MIN_POSTS); // enforce cap at write time
     await chrome.storage.local.set({ [MIN_POSTS_KEY]: minP, [AI_THRESHOLD_KEY]: minA });
     savedMinPosts = minP;
     savedAiPct    = minA;

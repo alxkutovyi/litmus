@@ -221,9 +221,76 @@ async function runMigrations() {
     console.log(`[Litmus] Migration 9: author stats migrated to per-author keys (${migratedCount} authors).`);
     version = 9;
   }
+
+  // ── Migration 10: slim author stats schema ────────────────────────────────
+  // Changes applied to all existing litmus:authorStats:<id> keys:
+  //   • Strip score from per-post entries (write-only field, saves ~25% per post)
+  //   • Trim each author's posts array to the 20 most-recent entries
+  //   • Evict authors beyond the 3,000-author cap (oldest lastSeen removed first)
+  //   • Clamp litmus:minPosts to 20 if it exceeds the new per-author post cap
+  if (version < 10) {
+    const MAX_POSTS_PER_AUTHOR = 20;
+    const MAX_AUTHORS          = 3000;
+
+    const all = await chrome.storage.local.get(null);
+
+    // Collect all per-author pairs.
+    let authorPairs = Object.entries(all)
+      .filter(([k]) => k.startsWith('litmus:authorStats:'));
+
+    // Evict beyond cap: sort by lastSeen desc, keep the 3,000 freshest.
+    if (authorPairs.length > MAX_AUTHORS) {
+      authorPairs.sort((a, b) => (b[1]?.lastSeen ?? 0) - (a[1]?.lastSeen ?? 0));
+      const toEvict = authorPairs.slice(MAX_AUTHORS).map(([k]) => k);
+      await chrome.storage.local.remove(toEvict);
+      authorPairs = authorPairs.slice(0, MAX_AUTHORS);
+      console.log(`[Litmus] Migration 10: evicted ${toEvict.length} authors beyond ${MAX_AUTHORS}-author cap.`);
+    }
+
+    // Slim each author's posts array.
+    const writes = {};
+    for (const [k, record] of authorPairs) {
+      if (!record?.posts) continue;
+      let posts = record.posts;
+      // Strip score, trim to 20 most-recent.
+      posts = posts
+        .sort((a, b) => (b.timestamp ?? b.seenAt ?? 0) - (a.timestamp ?? a.seenAt ?? 0))
+        .slice(0, MAX_POSTS_PER_AUTHOR)
+        .map(({ postId, label, timestamp, seenAt }) => ({
+          postId, label,
+          ...(timestamp != null ? { timestamp } : {}),
+          ...(seenAt    != null ? { seenAt    } : {}),
+        }));
+      writes[k] = { ...record, posts };
+    }
+    if (Object.keys(writes).length) await chrome.storage.local.set(writes);
+
+    // Clamp litmus:minPosts to MAX_POSTS_PER_AUTHOR.
+    const minPosts = all['litmus:minPosts'];
+    if (typeof minPosts === 'number' && minPosts > MAX_POSTS_PER_AUTHOR) {
+      await chrome.storage.local.set({ 'litmus:minPosts': MAX_POSTS_PER_AUTHOR });
+      console.log(`[Litmus] Migration 10: clamped litmus:minPosts from ${minPosts} to ${MAX_POSTS_PER_AUTHOR}.`);
+    }
+
+    await chrome.storage.local.set({ 'litmus:migrationVersion': 10 });
+    console.log(`[Litmus] Migration 10: slimmed ${Object.keys(writes).length} author records (score stripped, posts capped at ${MAX_POSTS_PER_AUTHOR}).`);
+    version = 10;
+  }
 }
 
-runMigrations().catch(err => console.error('[Litmus] Migration failed:', err));
+runMigrations()
+  .then(() => _logAuthorStatsHealth())
+  .catch(err => console.error('[Litmus] Migration failed:', err));
+
+// Log author count and rough storage size after migrations complete.
+async function _logAuthorStatsHealth() {
+  try {
+    const all         = await chrome.storage.local.get(null);
+    const authorKeys  = Object.keys(all).filter(k => k.startsWith('litmus:authorStats:'));
+    const roughBytes  = authorKeys.reduce((sum, k) => sum + JSON.stringify(all[k]).length, 0);
+    console.log(`[Litmus] AuthorStats: ${authorKeys.length} authors, ~${Math.round(roughBytes / 1024)}KB`);
+  } catch { /* non-critical */ }
+}
 
 // ── GPTZero usage-stats fetch ─────────────────────────────────────────────────
 // Calls the /v3/usage-stats endpoint and caches the result.

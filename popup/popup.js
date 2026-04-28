@@ -1,7 +1,7 @@
 // Popup script.
 
 const CACHE_PREFIX      = 'post:';
-const VERSION           = '0.2.3';
+const VERSION           = '0.2.4';
 const APIKEY_KEY        = 'litmus:gptzeroApiKey';
 const USAGE_STATS_KEY   = 'litmus:usageStats';
 const CACHE_STATS_KEY   = 'litmus:stats:cache';
@@ -17,6 +17,8 @@ const SKIP_RECOMMENDED_KEY = 'litmus:skipRecommendedFor';
 
 const DEFAULT_MIN_POSTS      = 5;
 const DEFAULT_AI_THRESHOLD   = 80;   // stored as integer percent (e.g. 80 = 80%)
+// Must stay in sync with MAX_POSTS_PER_AUTHOR in author-stats.js.
+const MAX_MIN_POSTS          = 20;
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -262,8 +264,8 @@ async function loadThresholds() {
 
 document.getElementById('input-min-posts').addEventListener('blur', async e => {
   let val = parseInt(e.target.value, 10);
-  if (isNaN(val) || val < 1)  { val = 1;   e.target.value = val; }
-  else if (val > 100)          { val = 100; e.target.value = val; }
+  if (isNaN(val) || val < 1)        { val = 1;            e.target.value = val; }
+  else if (val > MAX_MIN_POSTS)      { val = MAX_MIN_POSTS; e.target.value = val; }
   e.target.classList.remove('err');
   await chrome.storage.local.set({ [MIN_POSTS_KEY]: val });
 });

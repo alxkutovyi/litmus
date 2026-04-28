@@ -252,7 +252,7 @@ window.LAI.startObserver(async postElement => {
       if (ex?.authorId) {
         const exId = ex.authorId.includes(':') ? ex.authorId : `person:${ex.authorId}`;
         window.LAI.AuthorStats.update(
-          exId, ex.author, ex.authorProfileUrl ?? ex.profileUrl, key, label, det?.score ?? null,
+          exId, ex.author, ex.authorProfileUrl ?? ex.profileUrl, key, label,
         ).then(() => window.LAI.ActionDispatcher.maybeHide(exId, ex.author, ex.authorProfileUrl ?? ex.profileUrl))
          .catch(() => { /* non-critical */ });
       }
@@ -324,7 +324,6 @@ window.LAI.startObserver(async postElement => {
       extracted.authorProfileUrl,
       key,
       detection.label,
-      detection.score ?? null,
     ).then(() => window.LAI.ActionDispatcher.maybeHide(
       extracted.authorId, extracted.author, extracted.authorProfileUrl,
     )).catch(() => { /* non-critical */ });

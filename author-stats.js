@@ -1,18 +1,27 @@
 // Per-author AI detection tracking.
 // Maintains a rolling 90-day window of post classifications per author,
-// capped at 30 posts per author to bound storage growth.
+// capped at MAX_POSTS_PER_AUTHOR posts per author to bound storage growth.
 //
 // Storage: one key per author — 'litmus:authorStats:<authorId>' — so each
 // write is O(1) in author count. Stale authors (lastSeen older than 90 days)
 // are evicted asynchronously on every update.
 //
+// Total author count is capped at MAX_AUTHORS via LRU eviction (oldest lastSeen
+// is dropped when a new author would exceed the cap).
+//
 // Schema (per key): { authorId, name, profileUrl, posts, lastSeen }
-//   posts: [{ postId, label, score, timestamp }]
+//   posts: [{ postId, label, timestamp }]
 (function (LAI) {
 
   const KEY_PREFIX           = 'litmus:authorStats:';
   const NINETY_DAYS_MS       = 90 * 24 * 60 * 60 * 1000;
-  const MAX_POSTS_PER_AUTHOR = 30;
+
+  // Rolling window size for AI-rate calculations. Exposed on LAI so settings
+  // UI can reference it for the minPosts cap without hardcoding a second copy.
+  const MAX_POSTS_PER_AUTHOR = 20;
+  const MAX_AUTHORS          = 3000;
+
+  LAI.MAX_POSTS_PER_AUTHOR = MAX_POSTS_PER_AUTHOR;
 
   LAI.AuthorStats = {
 
@@ -22,15 +31,15 @@
     // profileUrl — full profile URL
     // postId     — cacheKey (the :v3 key) used as a stable post identifier
     // label      — 'ai' | 'human' | 'mixed' | 'uncertain'
-    // score      — 0–1 probability from the classifier (optional)
-    async update(authorId, name, profileUrl, postId, label, score) {
+    async update(authorId, name, profileUrl, postId, label) {
       if (!authorId || !postId) return;
 
       const storageKey = KEY_PREFIX + authorId;
       const result     = await LAI.safeStorage.get(storageKey);
 
-      const now    = Date.now();
-      const record = result[storageKey] ?? {
+      const now        = Date.now();
+      const isNewAuthor = !result[storageKey];
+      const record     = result[storageKey] ?? {
         authorId,
         name:       name ?? null,   // null until extraction succeeds; never fall back to slug
         profileUrl: profileUrl ?? null,
@@ -41,14 +50,19 @@
       // Dedupe: skip if this exact post has already been recorded.
       if (record.posts.some(p => p.postId === postId)) return;
 
-      // Append new post.
-      record.posts.push({ postId, label, score: score ?? null, timestamp: now });
+      // LRU cap: when adding a brand-new author, evict the stalest if at the limit.
+      if (isNewAuthor) {
+        await _evictOldestIfAtCap().catch(() => {});
+      }
+
+      // Append new post (score intentionally omitted — only label is used downstream).
+      record.posts.push({ postId, label, timestamp: now });
 
       // Decay: drop posts older than 90 days.
       const cutoff = now - NINETY_DAYS_MS;
       record.posts = record.posts.filter(p => (p.timestamp ?? p.seenAt ?? 0) >= cutoff);
 
-      // Cap: keep the 30 most-recent posts.
+      // Cap: keep the most-recent MAX_POSTS_PER_AUTHOR posts.
       if (record.posts.length > MAX_POSTS_PER_AUTHOR) {
         record.posts.sort((a, b) => (b.timestamp ?? b.seenAt ?? 0) - (a.timestamp ?? a.seenAt ?? 0));
         record.posts = record.posts.slice(0, MAX_POSTS_PER_AUTHOR);
@@ -69,6 +83,25 @@
     },
 
   };
+
+  // ── Internal helpers ────────────────────────────────────────────────────────
+
+  // If the author count is at MAX_AUTHORS, remove the one with the oldest lastSeen.
+  async function _evictOldestIfAtCap() {
+    const all   = await LAI.safeStorage.get(null);
+    const pairs = Object.entries(all).filter(([k]) => k.startsWith(KEY_PREFIX));
+    if (pairs.length < MAX_AUTHORS) return;
+
+    // Find the stalest author by lastSeen.
+    let oldestKey = null, oldestTs = Infinity;
+    for (const [k, v] of pairs) {
+      const ts = v?.lastSeen ?? 0;
+      if (ts < oldestTs) { oldestTs = ts; oldestKey = k; }
+    }
+    if (oldestKey) {
+      await LAI.safeStorage.remove(oldestKey);
+    }
+  }
 
   // Remove all per-author keys whose lastSeen timestamp is older than 90 days.
   async function _evictStaleAuthors() {
