@@ -17,11 +17,14 @@
 
     FEED_CONTAINER: 'div[data-testid="mainFeed"]',
 
-    // HYPOTHESIS — not verified against a real promoted post.
-    // LinkedIn marks sponsored posts with a "Promoted" label. Class names are
-    // volatile so the candidates below use structural/attribute anchors only.
-    // TODO: capture a real promoted post HTML and replace with a confirmed selector.
+    // Confirmed (April 2026) from real promoted post HTML:
+    //   <p componentkey="…">Promoted by <span> </span><a href="/company/…">…</a></p>
+    // The selector below matches a <p componentkey> that contains a /company/ link —
+    // combined with the JS text check ("promoted" in textContent) in extractor.js /
+    // content.js to avoid false-positive matches on job-title company links.
+    // The data-testid / aria-label candidates are left as speculative fallbacks.
     PROMOTED_MARKER: [
+      'p[componentkey]:has(a[href*="/company/"])',
       '[data-testid="feed-item-promoted-tag"]',
       '[data-testid="sponsored-tag"]',
       '[aria-label="Promoted"]',

@@ -69,8 +69,13 @@ function applyFilterRetroactively(category, shouldHide) {
       const labelEls = _getLabelEls(post);
       let matches = false;
       if (category === 'promoted') {
+        const norm = t => (t ?? '').replace(/[\u200b-\u200d\ufeff\u2060]/g, '').trim();
         matches = LAI.SELECTORS.PROMOTED_MARKER.some(sel => !!post.querySelector(sel))
-          || labelEls.some(el => /^promoted\b/i.test(el.textContent?.trim()));
+          || labelEls.some(el =>
+               el.querySelector?.('a[href*="/company/"]') &&
+               /promoted/i.test(norm(el.textContent))
+             )
+          || labelEls.some(el => /^promoted\b/i.test(norm(el.textContent)));
       } else if (category === 'suggested') {
         matches = labelEls.some(el => /^suggested$/i.test(el.textContent?.trim()));
       } else if (category === 'company') {
@@ -182,11 +187,24 @@ window.LAI.startObserver(async postElement => {
 
   // ── Hide check (manual blacklist + auto-hidden) ──────────────────────────
   // Both are synchronous in-memory checks — no storage read on the hot path.
+  //
+  // Checks both the original author AND the curator (the person whose engagement
+  // caused the post to surface — "X commented on this", "X likes this", etc.).
+  // If either is blacklisted/auto-hidden, suppress the post. The placeholder text
+  // differs so the user can tell why a post was hidden.
   if (extracted.authorId && (
     window.LAI.Blacklist.has(extracted.authorId) ||
     window.LAI.AutoHidden.has(extracted.authorId)
   )) {
     window.LAI.hidePost(postElement, extracted.authorId, extracted.author);
+    return;
+  }
+  if (extracted.curatorAuthorId && (
+    window.LAI.Blacklist.has(extracted.curatorAuthorId) ||
+    window.LAI.AutoHidden.has(extracted.curatorAuthorId)
+  )) {
+    const curatorLabel = extracted.curatorName || extracted.curatorAuthorId;
+    window.LAI.hidePost(postElement, extracted.curatorAuthorId, `engagement from ${curatorLabel}`);
     return;
   }
 

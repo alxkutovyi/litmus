@@ -254,6 +254,66 @@
     // Strip trailing middots, bullets, or whitespace that sometimes leaks in.
     if (author) author = author.replace(/[\u00b7\u2022\s·]+$/, '').trim() || null;
 
+    // ── Curator identity (engagement-curation posts only) ─────────────────────
+    // When a post surfaces because "Marijn Markus likes this" / "reposted" /
+    // "commented on this" / etc., we need the curator's identity to check against
+    // the blacklist in content.js.
+    //
+    // DOM difference between curation types (confirmed April 2026):
+    //
+    //   "likes / reposted / supports / celebrates this":
+    //     The curator's name appears as an INLINE link inside a <p>:
+    //       <p><a href="/in/marijnmarkus/"><strong>Marijn Markus</strong></a> likes this</p>
+    //     The <a> wraps <strong>, NOT <p>, so it is invisible to the nameLinks
+    //     filter (which requires <a>.querySelector('p')). nameLinks.length === 1
+    //     (only the original author), so the old `nameLinks.length >= 2` guard
+    //     never fired — this is why those curation types were silently missed.
+    //
+    //   "commented on this":
+    //     The curator has a full mini-profile card where <a href="/in/...">
+    //     wraps a <div>→<p>, so it IS in nameLinks as index 0. The inline link
+    //     in the curation paragraph also exists and points to the same person.
+    //
+    // Unified fix: find the curation-verb paragraph and pull the first /in/
+    // link from inside it. This works for all five types. nameLinks[0] is kept
+    // as a fallback for any layout variant we haven't observed.
+    //
+    // Reshares WITH commentary do not match isSecondaryCuration and are unaffected.
+    let curatorAuthorId   = null;
+    let curatorName       = null;
+    let curatorProfileUrl = null;
+
+    if (isSecondaryCuration) {
+      // Primary: inline link inside the curation-verb paragraph.
+      const curationPara = Array.from(postElement.querySelectorAll('p')).find(
+        p => /(reposted|likes|supports|celebrates|commented on) this/i.test(p.textContent)
+      );
+      const inlineLink = curationPara
+        ? Array.from(curationPara.querySelectorAll('a[href*="/in/"]'))
+            .find(a => /\/in\/[^/?#\s]+/.test(a.href))
+        : null;
+
+      // Fallback: nameLinks[0] for layouts with a full mini-profile card
+      // (covers "commented on this" variants and any future changes).
+      const curatorLink = inlineLink ?? (nameLinks.length >= 2 ? nameLinks[0] : null);
+
+      if (curatorLink) {
+        const curUrl  = curatorLink.href?.replace(/[?#].*$/, '') ?? null;
+        const curSlug = curUrl?.match(/\/in\/([^/?#]+)/)?.[1] ?? null;
+        if (curSlug) {
+          curatorAuthorId   = `person:${curSlug}`;
+          curatorProfileUrl = curUrl;
+          // Inline links contain the name as text content of the link itself
+          // (e.g. "Marijn Markus" from <a><strong>Marijn Markus</strong></a>).
+          // nameLinks-style links need visibleText(p) to skip aria-hidden badges.
+          curatorName = inlineLink
+            ? cleanAuthorName(curatorLink.textContent?.trim() ?? null)
+            : cleanAuthorName(visibleText(curatorLink.querySelector('p')));
+          if (curatorName) curatorName = curatorName.replace(/[\u00b7\u2022\s·]+$/, '').trim() || null;
+        }
+      }
+    }
+
     // ── Media ──────────────────────────────────────────────────────────────────
     // Videos are unambiguous. For images, exclude profile pictures (matched by
     // isProfileImg) and empty-alt decorative images.
@@ -283,11 +343,30 @@
     const labelEls = getLabelElements(postElement);
 
     // ── Promoted ───────────────────────────────────────────────────────────────
-    // Structural selectors first; text fallback uses /^promoted\b/i so it also
-    // matches "Promoted by <Company>" variants.
-    const isPromoted = LAI.SELECTORS.PROMOTED_MARKER.some(
-      sel => !!postElement.querySelector(sel)
-    ) || labelEls.some(el => /^promoted\b/i.test(el.textContent?.trim()));
+    // Three-tier detection (any one is sufficient):
+    //
+    //   1. CSS structural selector (PROMOTED_MARKER list — see selectors.js).
+    //      Includes `p[componentkey]:has(a[href*="/company/"])` which is confirmed
+    //      from real promoted-post HTML (April 2026).
+    //
+    //   2. Compound structural+text check: a label element that BOTH contains a
+    //      /company/ link AND has "promoted" anywhere in its text. This guards
+    //      against false positives from job-title company links (those don't say
+    //      "promoted").
+    //
+    //   3. Text-only fallback: `/^promoted\b/i` on each label element's text,
+    //      after stripping leading/trailing whitespace AND zero-width Unicode chars
+    //      (LinkedIn sometimes injects \u200b etc. which would defeat a bare .trim()).
+    function _normalise(text) {
+      return (text ?? '').replace(/[\u200b-\u200d\ufeff\u2060]/g, '').trim();
+    }
+    const isPromoted =
+      LAI.SELECTORS.PROMOTED_MARKER.some(sel => !!postElement.querySelector(sel))
+      || labelEls.some(el =>
+           el.querySelector?.('a[href*="/company/"]') &&
+           /promoted/i.test(_normalise(el.textContent))
+         )
+      || labelEls.some(el => /^promoted\b/i.test(_normalise(el.textContent)));
 
     // ── Suggested ──────────────────────────────────────────────────────────────
     // Algorithmic post recommendations LinkedIn labels with "Suggested".
@@ -327,6 +406,9 @@
       truncated,
       hasMedia,
       isSecondaryCuration,
+      curatorAuthorId,
+      curatorName,
+      curatorProfileUrl,
       isPromoted,
       isSuggested,
       isRecommendedFor,

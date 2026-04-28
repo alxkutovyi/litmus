@@ -45,6 +45,7 @@
 }
 .lai-pill[data-status="ai"]         { background: #FCEBEB; color: #791F1F; }
 .lai-pill[data-status="mixed"]      { background: #FAEEDA; color: #633806; }
+.lai-pill[data-status="human"]      { background: #F0F4F1; color: #3C5A4A; }
 .lai-pill[data-status="pending"],
 .lai-pill[data-status="error"],
 .lai-pill[data-status="error-auth"],
@@ -98,6 +99,7 @@
     const score = meta?.score != null ? Math.round(meta.score * 100) : null;
     if (status === 'ai')      return score != null ? `AI ${score}%`    : 'AI';
     if (status === 'mixed')   return score != null ? `Mixed ${score}%` : 'Mixed';
+    if (status === 'human')   return score != null ? `Human ${score}%` : 'Human';
     if (status === 'pending') return '…';
     return '?'; // error, error-auth, error-rate, no-key, uncertain
   }
@@ -280,7 +282,6 @@
 
   LAI.injectBadge = function (postElement, status, meta) {
     if (status === 'skipped') return;
-    if (status === 'human')   return; // no pill for human posts
     if (!BADGE_CONFIG[status]) return;
     if (postElement.querySelector('[data-lai-pill]')) return;
 
@@ -315,12 +316,6 @@
 
   LAI.updateBadge = function (postElement, status, meta) {
     const pill = postElement.querySelector('[data-lai-pill]');
-
-    // Human resolves: remove any pending/error pill that was shown earlier.
-    if (status === 'human') {
-      if (pill) pill.remove();
-      return;
-    }
 
     if (status === 'skipped') return;
     if (!BADGE_CONFIG[status]) return;

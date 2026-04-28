@@ -1,7 +1,7 @@
 // Popup script.
 
 const CACHE_PREFIX      = 'post:';
-const VERSION           = '0.2.4';
+const VERSION           = '0.2.5';
 const APIKEY_KEY        = 'litmus:gptzeroApiKey';
 const USAGE_STATS_KEY   = 'litmus:usageStats';
 const CACHE_STATS_KEY   = 'litmus:stats:cache';
