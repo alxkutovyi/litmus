@@ -155,8 +155,14 @@
     // (that uniquely identifies the name links and avoids the avatar links).
     // For reshares, there are two such links: index 0 = resharer, index 1 = original.
 
+    // Scope link search to elements that appear before the post body in document
+    // order. LinkedIn renders inline comment sections below the social-action bar
+    // (which is after the expandable-text-box). Without this guard, a commenter's
+    // mini-profile card adds an extra name link that shifts nameLinkIdx and causes
+    // the pill to land on the commenter instead of the original post author.
     const allInLinks = Array.from(postElement.querySelectorAll('a[href*="/in/"]'))
-      .filter(a => /\/in\/[^/?#\s]+/.test(a.href));
+      .filter(a => /\/in\/[^/?#\s]+/.test(a.href))
+      .filter(a => !bodyEl || !!(a.compareDocumentPosition(bodyEl) & Node.DOCUMENT_POSITION_FOLLOWING));
 
     // Name links have <p> children; avatar links wrap <figure>.
     const nameLinks = allInLinks.filter(a => !a.querySelector('figure') && a.querySelector('p'));

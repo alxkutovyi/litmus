@@ -169,8 +169,13 @@
   // the correct name (original author for reshares, not the resharer).
 
   function findAuthorContainer(postElement) {
+    // Scope link search to elements that appear before the post body — mirrors
+    // the same guard in extractor.js to prevent inline-comment name links from
+    // shifting nameLinkIdx and causing the pill to land on the commenter.
+    const bodyEl = postElement.querySelector(LAI.SELECTORS.POST_BODY);
     const allInLinks = Array.from(postElement.querySelectorAll('a[href*="/in/"]'))
-      .filter(a => /\/in\/[^/?#\s]+/.test(a.href));
+      .filter(a => /\/in\/[^/?#\s]+/.test(a.href))
+      .filter(a => !bodyEl || !!(a.compareDocumentPosition(bodyEl) & Node.DOCUMENT_POSITION_FOLLOWING));
     const nameLinks = allInLinks.filter(a => !a.querySelector('figure') && a.querySelector('p'));
 
     const isSecondaryCuration = Array.from(postElement.querySelectorAll('p'))
