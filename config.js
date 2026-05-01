@@ -5,7 +5,7 @@
 // scripts is inconsistent across versions. The global namespace is simpler
 // and fully reliable. See manifest.json for load order.
 (function (LAI) {
-  LAI.VERSION    = '0.2.5';
+  LAI.VERSION    = '0.2.6';
   LAI.DEV_MODE   = true;
   LAI.LOG_PREFIX = '[Litmus]';
 

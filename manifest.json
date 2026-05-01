@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Litmus",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Flags AI-generated posts in the LinkedIn feed",
 
   "background": { "service_worker": "background.js" },
